@@ -296,7 +296,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="p-4 minecraft-card bg-red-950/25 border border-red-800/60 space-y-2.5">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500" />
-              <span className="text-xs font-bold uppercase text-red-400">Desinstalar Launcher</span>
+              <span className="text-xs font-bold uppercase text-red-400">Desinstalar</span>
             </div>
             <p className="text-[11px] text-stone-400 leading-relaxed">
               Desinstala Chaos Launcher y elimina por completo todos los modpacks descargados, perfiles y datos guardados en este equipo.
