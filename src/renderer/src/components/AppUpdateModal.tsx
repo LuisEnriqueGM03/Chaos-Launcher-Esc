@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Sparkles, RefreshCw, CheckCircle2, ArrowRight, AlertTriangle } from 'lucide-react';
+import { marked } from 'marked';
 import { AppUpdateInfo, AppUpdateProgress } from '../vite-env';
 import logoSquare from '../assets/logo_desk_square.png';
 
@@ -126,9 +127,18 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 Novedades de la versión:
               </span>
               {updateInfo.releaseNotes ? (
-                <div className="text-xs text-stone-300 whitespace-pre-line font-sans leading-relaxed">
-                  {updateInfo.releaseNotes}
-                </div>
+                <div
+                  className="text-xs text-stone-300 font-sans leading-relaxed prose prose-invert max-w-none [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:text-orange-400 [&_a]:underline [&_strong]:text-white [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h1]:font-bold [&_h2]:font-bold [&_li]:my-0.5"
+                  dangerouslySetInnerHTML={{
+                    __html: (() => {
+                      try {
+                        return marked.parse(updateInfo.releaseNotes, { breaks: true, gfm: true }) as string;
+                      } catch {
+                        return updateInfo.releaseNotes;
+                      }
+                    })(),
+                  }}
+                />
               ) : (
                 <p className="text-xs text-stone-400 italic">
                   Mejoras de rendimiento, estabilidad y nuevas funciones de Chaos Launcher.
