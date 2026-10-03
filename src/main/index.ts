@@ -77,9 +77,7 @@ function createWindow() {
   // Inicializar el actualizador automático ligado a GitHub Releases
   AppUpdater.init(mainWindow);
   mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(() => {
-      AppUpdater.checkForUpdates();
-    }, 1500);
+    AppUpdater.checkForUpdates();
   });
 
   mainWindow.on('closed', () => {

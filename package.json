@@ -76,10 +76,7 @@
       ],
       "icon": "build/icon.ico",
       "legalTrademarks": "Chaos Launcher",
-      "requestedExecutionLevel": "asInvoker",
-      "certificateFile": "certs/ChaosLauncher.pfx",
-      "certificatePassword": "ChaosLauncher2026!",
-      "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,

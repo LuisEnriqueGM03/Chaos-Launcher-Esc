@@ -31,6 +31,10 @@ export class AppUpdater {
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = console;
 
+    // Deshabilitar la verificación estricta de Authenticode para certificados autofirmados
+    (autoUpdater as any).verifyUpdateCodeSignature = () => Promise.resolve(null);
+    (autoUpdater as any)._verifyUpdateCodeSignature = () => Promise.resolve(null);
+
     // Configuración de GitHub explícita por si no carga package.json
     autoUpdater.setFeedURL({
       provider: 'github',

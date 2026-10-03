@@ -42,6 +42,7 @@ export const App: React.FC = () => {
   const [appUpdateProgress, setAppUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const [isAppUpdating, setIsAppUpdating] = useState(false);
   const [isAppUpdateDownloaded, setIsAppUpdateDownloaded] = useState(false);
+  const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
 
   // Modpacks dinámicos del backend
   const [modpacks, setModpacks] = useState<ModpackItem[]>([]);
@@ -72,6 +73,9 @@ export const App: React.FC = () => {
   // Cargar datos al iniciar
   useEffect(() => {
     if (!window.chaosAPI) return;
+
+    // Comprobar actualización del Launcher inmediatamente al arrancar
+    window.chaosAPI.updater?.checkForUpdates?.().catch(console.error);
 
     // 1. Cargar sesión de usuario
     window.chaosAPI.auth.getState().then((state) => {
@@ -146,22 +150,26 @@ export const App: React.FC = () => {
     const unsubAppUpdate = window.chaosAPI.updater?.onUpdateAvailable?.((info) => {
       console.log('[App] Nueva versión de Chaos Launcher detectada:', info);
       setAppUpdateInfo(info);
+      setAppUpdateError(null);
       setIsAppUpdateModalOpen(true);
     });
 
     const unsubAppProg = window.chaosAPI.updater?.onDownloadProgress?.((prog) => {
       setAppUpdateProgress(prog);
+      setAppUpdateError(null);
     });
 
     const unsubAppDownloaded = window.chaosAPI.updater?.onUpdateDownloaded?.((info) => {
       console.log('[App] Actualización del launcher descargada:', info);
       setIsAppUpdating(false);
       setIsAppUpdateDownloaded(true);
+      setAppUpdateError(null);
     });
 
     const unsubAppErr = window.chaosAPI.updater?.onError?.((err) => {
       console.warn('[App] Error en actualizador del Launcher:', err);
       setIsAppUpdating(false);
+      setAppUpdateError(err);
     });
 
     return () => {
@@ -179,9 +187,11 @@ export const App: React.FC = () => {
 
   const handleStartAppUpdate = () => {
     setIsAppUpdating(true);
+    setAppUpdateError(null);
     window.chaosAPI.updater?.startDownload?.().catch((err) => {
       console.error('Error iniciando descarga de actualización del launcher:', err);
       setIsAppUpdating(false);
+      setAppUpdateError(err?.message || String(err));
     });
   };
 
@@ -623,17 +633,17 @@ export const App: React.FC = () => {
         onClose={() => setIsRefreshingModpacks(false)}
       />
 
-      {/* Modal de auto-actualización del Launcher */}
+      {/* Modal de auto-actualización del Launcher (Obligatorio) */}
       <AppUpdateModal
         isOpen={isAppUpdateModalOpen}
         updateInfo={appUpdateInfo}
         progress={appUpdateProgress}
         isDownloading={isAppUpdating}
         isDownloaded={isAppUpdateDownloaded}
+        errorMessage={appUpdateError}
         currentVersion="1.0.0"
         onStartDownload={handleStartAppUpdate}
         onQuitAndInstall={handleQuitAndInstallApp}
-        onClose={() => setIsAppUpdateModalOpen(false)}
       />
     </div>
   );

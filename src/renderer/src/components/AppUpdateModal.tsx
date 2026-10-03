@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Sparkles, RefreshCw, CheckCircle2, ArrowRight, X, AlertTriangle } from 'lucide-react';
+import { Download, Sparkles, RefreshCw, CheckCircle2, ArrowRight, AlertTriangle } from 'lucide-react';
 import { AppUpdateInfo, AppUpdateProgress } from '../vite-env';
 import logoSquare from '../assets/logo_desk_square.png';
 
@@ -9,10 +9,10 @@ interface AppUpdateModalProps {
   progress: AppUpdateProgress | null;
   isDownloading: boolean;
   isDownloaded: boolean;
+  errorMessage?: string | null;
   currentVersion?: string;
   onStartDownload: () => void;
   onQuitAndInstall: () => void;
-  onClose?: () => void;
 }
 
 export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
@@ -21,10 +21,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   progress,
   isDownloading,
   isDownloaded,
+  errorMessage,
   currentVersion = '1.0.0',
   onStartDownload,
   onQuitAndInstall,
-  onClose,
 }) => {
   const [countdown, setCountdown] = useState(5);
 
@@ -64,25 +64,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none">
-      <div className="relative w-full max-w-lg minecraft-panel bg-[#160b0b] p-6 sm:p-7 overflow-hidden text-slate-200 shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200 select-none">
+      <div className="relative w-full max-w-lg minecraft-panel bg-[#160b0b] p-6 sm:p-7 overflow-hidden text-slate-200 shadow-2xl border-2 border-red-900/80">
         {/* Glow de borde superior */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-amber-500" />
-
-        {/* Botón de cerrar (solo si no se está descargando ni instalando) */}
-        {onClose && !isDownloading && !isDownloaded && (
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 minecraft-btn-lava text-slate-300 hover:text-white transition cursor-pointer"
-            title="Posponer actualización"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-600 via-orange-500 to-amber-500" />
 
         {/* Header */}
         <div className="flex items-center gap-4 mb-5">
-          <div className="minecraft-slot w-14 h-14 p-1 flex items-center justify-center shrink-0 bg-black/60">
+          <div className="minecraft-slot w-14 h-14 p-1 flex items-center justify-center shrink-0 bg-black/60 border-2 border-red-950">
             <img
               src={logoSquare}
               alt="Chaos Launcher"
@@ -90,11 +79,11 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               style={{ imageRendering: 'pixelated' }}
             />
           </div>
-          <div className="pr-6">
+          <div className="pr-2">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/90 text-red-300 border border-red-700/60 flex items-center gap-1">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950 text-red-300 border border-red-700/60 flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-red-400" />
-                NUEVA ACTUALIZACIÓN DISPONIBLE
+                ACTUALIZACIÓN OBLIGATORIA
               </span>
             </div>
             <h3 className="font-gamer font-bold text-xl sm:text-2xl text-white tracking-wide mt-1 minecraft-text-shadow-lava">
@@ -112,13 +101,24 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           </div>
         </div>
 
-        {/* Contenido según el estado */}
+        {/* Estado 1: Disponible para descargar */}
         {!isDownloading && !isDownloaded && (
           <div className="space-y-4">
             <p className="text-xs text-stone-300 leading-relaxed">
-              Hay una nueva versión oficial de <span className="text-white font-bold">Chaos Launcher</span> disponible en GitHub.
-              Actualiza para disfrutar de las últimas mejoras, correcciones y compatibilidad.
+              Existe una nueva versión oficial de <span className="text-white font-bold">Chaos Launcher</span>.
+              Para garantizar la estabilidad y compatibilidad con los servidores, es necesario actualizar antes de continuar.
             </p>
+
+            {/* Error previo si ocurrió */}
+            {errorMessage && (
+              <div className="p-3 bg-red-950/90 border-2 border-red-700 text-red-200 text-xs flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+                <div>
+                  <span className="font-bold block">Error al actualizar:</span>
+                  <span className="text-[11px] text-red-300">{errorMessage}</span>
+                </div>
+              </div>
+            )}
 
             {/* Notas del parche */}
             <div className="minecraft-card bg-black/60 p-3 max-h-40 overflow-y-auto space-y-1.5 border border-red-950/50">
@@ -136,30 +136,23 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               )}
             </div>
 
-            {/* Acciones */}
-            <div className="pt-2 flex flex-col sm:flex-row gap-3">
-              {onClose && (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="sm:w-1/3 py-2.5 minecraft-btn-lava text-stone-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition cursor-pointer"
-                >
-                  Más tarde
-                </button>
-              )}
+            {/* Botón centrado único */}
+            <div className="pt-2 flex justify-center">
               <button
                 type="button"
                 onClick={onStartDownload}
-                className="flex-1 py-3 minecraft-btn-green text-white font-bold text-sm tracking-wider flex items-center justify-center gap-2 transition cursor-pointer uppercase shadow-lg"
+                className="w-full py-3.5 minecraft-btn-green text-white font-bold text-base tracking-wider flex items-center justify-center gap-2.5 transition cursor-pointer uppercase shadow-xl"
               >
-                <Download className="w-4 h-4 text-green-200" />
-                <span className="minecraft-text-shadow-green">DESCARGAR Y ACTUALIZAR</span>
+                <Download className="w-5 h-5 text-green-200" />
+                <span className="minecraft-text-shadow-green">
+                  {errorMessage ? 'REINTENTAR ACTUALIZAR' : 'DESCARGAR Y ACTUALIZAR'}
+                </span>
               </button>
             </div>
           </div>
         )}
 
-        {/* Estado: Descargando */}
+        {/* Estado 2: Descargando */}
         {isDownloading && (
           <div className="space-y-4 py-2">
             <div className="flex items-center justify-between text-xs">
@@ -196,7 +189,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
           </div>
         )}
 
-        {/* Estado: Completado y listo para reiniciar */}
+        {/* Estado 3: Completado y listo para reiniciar */}
         {isDownloaded && (
           <div className="space-y-4 py-2 text-center animate-in fade-in duration-300">
             <div className="flex flex-col items-center justify-center gap-2">
@@ -215,7 +208,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               <button
                 type="button"
                 onClick={onQuitAndInstall}
-                className="w-full py-3 minecraft-btn-green text-white font-bold text-sm tracking-wider flex items-center justify-center gap-2 transition cursor-pointer uppercase shadow-lg"
+                className="w-full py-3.5 minecraft-btn-green text-white font-bold text-sm tracking-wider flex items-center justify-center gap-2 transition cursor-pointer uppercase shadow-lg"
               >
                 <Sparkles className="w-4 h-4 text-emerald-200" />
                 <span className="minecraft-text-shadow-green">REINICIAR Y APLICAR AHORA</span>
