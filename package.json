@@ -1,0 +1,98 @@
+{
+  "name": "chaos-launcher",
+  "version": "1.0.0",
+  "description": "ChaosLauncher - Launcher moderno de Minecraft con soporte Premium/No-Premium y actualización obligatoria de modpacks",
+  "author": "Chaos Studio",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "start": "electron .",
+    "bundle-pack": "node scripts/bundleModpack.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@types/marked": "^5.0.2",
+    "adm-zip": "^0.5.16",
+    "axios": "^1.7.9",
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^0.475.0",
+    "marked": "^18.0.14",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.chaos.launcher",
+    "productName": "Chaos Launcher",
+    "copyright": "Copyright © 2026 Chaos Studio. Todos los derechos reservados.",
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "LuisEnriqueGM03",
+      "repo": "Chaos-Launcher-Esc",
+      "releaseType": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "icon.png"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "legalTrademarks": "Chaos Launcher",
+      "requestedExecutionLevel": "asInvoker",
+      "certificateFile": "certs/ChaosLauncher.pfx",
+      "certificatePassword": "ChaosLauncher2026!",
+      "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chaos Launcher",
+      "artifactName": "ChaosLauncher-Setup-${version}.${ext}",
+      "uninstallDisplayName": "Chaos Launcher",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh"
+    }
+  }
+}

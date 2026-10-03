@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "electron-dev": {
+      "source": "pedronauck/skills",
+      "sourceType": "github",
+      "skillPath": "skills/curated/electron-dev/SKILL.md",
+      "computedHash": "9389d1cc3aa88d8e6c58fd4ef75660bc772bf91ad27f163f0134be59e0509d49"
+    },
+    "tailwind-css-patterns": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "skillPath": "plugins/developer-kit-typescript/skills/tailwind-css-patterns/SKILL.md",
+      "computedHash": "2fa1b2d4e0bc020dcbaa1e65af6f7ba75715116686e0fd663a4b268c8ace22d4"
+    }
+  }
+}

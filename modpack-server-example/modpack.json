@@ -1,0 +1,19 @@
+{
+  "name": "Chaos Pack Oficial",
+  "version": "1.0.0",
+  "minecraftVersion": "1.20.1",
+  "loader": {
+    "type": "fabric",
+    "version": "0.15.11"
+  },
+  "downloadUrl": "https://raw.githubusercontent.com/LuisEduardoDev/ChaosLauncher/main/modpack-server-example/pack-example.zip",
+  "forceUpdate": true,
+  "changelog": [
+    "✨ Versión de lanzamiento de Chaos Pack",
+    "⚡ Optimización con Sodium, Lithium e Indium",
+    "🎙️ Chat de voz posicional integrado",
+    "🗺️ Minimapa JourneyMap para el servidor",
+    "🛡️ Rendimiento mejorado a 144+ FPS"
+  ],
+  "fileSizeMb": 1
+}

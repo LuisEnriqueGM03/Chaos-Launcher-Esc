@@ -1,0 +1,305 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    user-select: none;
+    font-family: 'Minecraft', 'Minecraftia', 'Silkscreen', 'VT323', monospace;
+    background-color: #080505;
+    letter-spacing: 0.04em;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-gamer, button, input {
+    font-family: 'Minecraft', 'Minecraftia', 'Silkscreen', 'VT323', monospace;
+    letter-spacing: 0.05em;
+  }
+}
+
+/* Región de arrastre para la ventana frameless */
+.titlebar-drag-region {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbars estilo Lava Pixelado */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+  border-left: 2px solid #1a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3b1414;
+  border: 2px solid #000000;
+  box-shadow: inset 1px 1px 0 #5e2020;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5e2020;
+}
+
+/* Tipografía Oficial de Minecraft con fallbacks pixelados */
+.font-minecraft {
+  font-family: 'Minecraft', 'Minecraftia', 'Silkscreen', 'VT323', monospace;
+  letter-spacing: 0.06em;
+}
+
+/* ======================================================== */
+/* MINECRAFT UI PANELS & CARDS (Colores oscuros de Chaos) */
+/* ======================================================== */
+
+/* Panel principal estilo ventana Minecraft */
+.minecraft-panel {
+  background-color: #110808;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 3px 3px 0px #2e1414,
+    inset -3px -3px 0px #080303,
+    0 10px 30px rgba(0, 0, 0, 0.85);
+  image-rendering: pixelated;
+}
+
+/* Tarjeta / Ranura estilo inventario Minecraft */
+.minecraft-card {
+  background-color: #180c0c;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #2e1616,
+    inset -2px -2px 0px #0a0404,
+    0 4px 10px rgba(0, 0, 0, 0.5);
+  image-rendering: pixelated;
+}
+
+/* Ranura de ítem Minecraft (Item slot hundido) */
+.minecraft-slot {
+  background-color: #0b0505;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #000000,
+    inset -1px -1px 0px #240a0a;
+  image-rendering: pixelated;
+}
+
+/* Input de texto estilo Minecraft */
+.minecraft-input {
+  background-color: #0c0505;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #000000,
+    inset -1px -1px 0px #2e1212;
+  color: #ffffff;
+  font-family: 'Minecraft', 'Minecraftia', 'Silkscreen', 'VT323', monospace;
+  outline: none;
+  transition: border-color 0.1s ease;
+}
+
+.minecraft-input:focus {
+  border-color: #7a2222;
+  box-shadow: 
+    inset 2px 2px 0px #000000,
+    0 0 8px rgba(255, 50, 50, 0.4);
+}
+
+/* ======================================================== */
+/* MINECRAFT BUTTONS (Verde, Lava/Rojo, Ámbar, Gris)        */
+/* ======================================================== */
+
+/* Botón Minecraft Verde Original (Play / Jugar) */
+.minecraft-btn-green {
+  background-color: #388534;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 3px 3px 0px #6ccc60,
+    inset -3px -4px 0px #184814,
+    0 8px 0px rgba(0, 0, 0, 0.45);
+  image-rendering: pixelated;
+  user-select: none;
+  transition: background-color 0.08s ease, transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.minecraft-btn-green:hover:not(:disabled) {
+  background-color: #449c40;
+  box-shadow: 
+    inset 3px 3px 0px #82e275,
+    inset -3px -4px 0px #1e5818,
+    0 8px 0px rgba(0, 0, 0, 0.55);
+}
+
+.minecraft-btn-green:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 
+    inset 3px 3px 0px #184814,
+    inset -3px -3px 0px #6ccc60,
+    0 4px 0px rgba(0, 0, 0, 0.55);
+}
+
+/* Botón Minecraft Lava / Carmesí (Tema oficial de Chaos Launcher) */
+.minecraft-btn-lava {
+  background-color: #381212;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #662020,
+    inset -2px -3px 0px #180606,
+    0 4px 0px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  text-shadow: 2px 2px 0px #120404;
+  image-rendering: pixelated;
+  user-select: none;
+  transition: background-color 0.08s ease, transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.minecraft-btn-lava:hover:not(:disabled) {
+  background-color: #4c1818;
+  box-shadow: 
+    inset 2px 2px 0px #852a2a,
+    inset -2px -3px 0px #220808,
+    0 4px 0px rgba(0, 0, 0, 0.55);
+}
+
+.minecraft-btn-lava:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 
+    inset 2px 2px 0px #180606,
+    inset -2px -2px 0px #662020,
+    0 2px 0px rgba(0, 0, 0, 0.4);
+}
+
+/* Botón Minecraft Ámbar / Oro (Mimic MC / Advertencias) */
+.minecraft-btn-amber {
+  background-color: #6b3e00;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #b36800,
+    inset -2px -3px 0px #382000,
+    0 4px 0px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  text-shadow: 2px 2px 0px #241400;
+  image-rendering: pixelated;
+  user-select: none;
+  transition: background-color 0.08s ease, transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.minecraft-btn-amber:hover:not(:disabled) {
+  background-color: #854d00;
+  box-shadow: 
+    inset 2px 2px 0px #d47c00,
+    inset -2px -3px 0px #472900,
+    0 4px 0px rgba(0, 0, 0, 0.55);
+}
+
+.minecraft-btn-amber:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 
+    inset 2px 2px 0px #382000,
+    inset -2px -2px 0px #b36800,
+    0 2px 0px rgba(0, 0, 0, 0.4);
+}
+
+/* Botón Minecraft Gris Neutro */
+.minecraft-btn-gray {
+  background-color: #4a4a4a;
+  border: 2px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #757575,
+    inset -2px -3px 0px #242424,
+    0 4px 0px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  text-shadow: 2px 2px 0px #1a1a1a;
+  image-rendering: pixelated;
+  user-select: none;
+  transition: all 0.08s ease;
+}
+
+.minecraft-btn-gray:hover:not(:disabled) {
+  background-color: #5c5c5c;
+  box-shadow: 
+    inset 2px 2px 0px #949494,
+    inset -2px -3px 0px #333333,
+    0 4px 0px rgba(0, 0, 0, 0.55);
+}
+
+.minecraft-btn-gray:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 
+    inset 2px 2px 0px #242424,
+    inset -2px -2px 0px #757575,
+    0 2px 0px rgba(0, 0, 0, 0.4);
+}
+
+/* ======================================================== */
+/* TEXT SHADOWS OFICIALES MINECRAFT                          */
+/* ======================================================== */
+.minecraft-text-shadow {
+  text-shadow: 2px 2px 0px #153e10, 3px 3px 0px rgba(0, 0, 0, 0.6);
+}
+
+.minecraft-text-shadow-lava {
+  text-shadow: 2px 2px 0px #180404, 3px 3px 0px rgba(0, 0, 0, 0.6);
+}
+
+.minecraft-text-shadow-amber {
+  text-shadow: 2px 2px 0px #241400, 3px 3px 0px rgba(0, 0, 0, 0.6);
+}
+
+.minecraft-text-shadow-gray {
+  text-shadow: 2px 2px 0px #141414, 3px 3px 0px rgba(0, 0, 0, 0.6);
+}
+
+/* Barra de progreso estilo Minecraft Lava / Carmesí Chaos Launcher */
+.minecraft-progress-container {
+  background-color: #140707;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 2px 2px 0px #5c1818,
+    inset -2px -2px 0px #1c0606,
+    0 8px 24px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(220, 38, 38, 0.35);
+  image-rendering: pixelated;
+}
+
+.minecraft-progress-fill {
+  background: linear-gradient(180deg, #ffaa00 0%, #ff7700 50%, #d45500 100%);
+  box-shadow: 
+    inset 0 2px 0px #ffdf80,
+    inset 0 -2px 0px #802b00;
+}
+
+/* Botón Azul Discord Minecraft 3D */
+.minecraft-btn-discord {
+  background-color: #5865F2;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 3px 3px 0px #828bf7,
+    inset -3px -4px 0px #333cb3,
+    0 6px 0px rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  text-shadow: 2px 2px 0px #1f2570;
+  image-rendering: pixelated;
+  user-select: none;
+  transition: background-color 0.08s ease, transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.minecraft-btn-discord:hover:not(:disabled) {
+  background-color: #6a76f5;
+  box-shadow: 
+    inset 3px 3px 0px #9da4f9,
+    inset -3px -4px 0px #3d47c4,
+    0 6px 0px rgba(0, 0, 0, 0.6);
+}
+
+.minecraft-btn-discord:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 
+    inset 3px 3px 0px #333cb3,
+    inset -3px -3px 0px #828bf7,
+    0 3px 0px rgba(0, 0, 0, 0.5);
+}
+
