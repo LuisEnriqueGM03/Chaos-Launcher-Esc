@@ -267,7 +267,7 @@ export class UpdateChecker {
         (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'),
       ).length >= 1 || fs.readdirSync(modsDir).length >= 1);
 
-    let currentVersion = config.installedModpackVersion;
+    let currentVersion = store.getInstalledModpackVersion(effectiveTag);
     if (!hasLocalMods) {
       currentVersion = null;
     }
@@ -354,6 +354,30 @@ export class UpdateChecker {
         manifest = store.getCachedManifest(effectiveTag);
       }
 
+      // 2.5 Si el manifest apunta a un modpack.json remoto (p.ej. GitHub raw), resolver la versión autoritativa fresca
+      if (manifest && manifest.downloadUrl && (manifest.downloadUrl.endsWith('.json') || manifest.downloadUrl.includes('modpack.json'))) {
+        try {
+          const rawRes = await axios.get(manifest.downloadUrl, {
+            timeout: 5000,
+            headers: { 'Cache-Control': 'no-cache' },
+          });
+          if (rawRes.data && rawRes.data.version) {
+            manifest.version = rawRes.data.version;
+            if (rawRes.data.files && Array.isArray(rawRes.data.files)) {
+              manifest.files = rawRes.data.files;
+            }
+            if (rawRes.data.changelog && Array.isArray(rawRes.data.changelog)) {
+              manifest.changelog = rawRes.data.changelog;
+            }
+            if (effectiveTag) {
+              store.setCachedManifest(effectiveTag, manifest);
+            }
+          }
+        } catch (rawErr: any) {
+          console.log(`[UpdateChecker] No se pudo verificar versión remota directa de modpack.json: ${rawErr.message}`);
+        }
+      }
+
       // 3. Si no hay manifiesto ni en backend ni en caché
       if (!manifest) {
         return {
@@ -366,7 +390,8 @@ export class UpdateChecker {
       }
 
       const remoteVersion = manifest.version;
-      const isUpdateAvailable = !hasLocalMods || currentVersion !== remoteVersion;
+      const isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === remoteVersion);
+      const isUpdateAvailable = !hasLocalMods || !isUpToDate;
       const isMandatory = isUpdateAvailable && manifest.forceUpdate !== false;
 
       return {
@@ -379,7 +404,8 @@ export class UpdateChecker {
     } catch (err: any) {
       console.warn('Error al comprobar actualización:', err.message);
       const cachedManifest = (effectiveTag ? store.getCachedManifest(effectiveTag) : null) || this.getDefaultManifest(effectiveTag);
-      const isUpdateAvailable = !hasLocalMods || currentVersion !== cachedManifest.version;
+      const isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === cachedManifest.version);
+      const isUpdateAvailable = !hasLocalMods || !isUpToDate;
 
       return {
         isUpdateAvailable,

@@ -35,6 +35,7 @@ interface MimicServerCardProps {
   isDownloading: boolean;
   downloadProgress: DownloadProgress | null;
   isGameRunning: boolean;
+  isUpdateAvailable?: boolean;
   onLaunch: () => void;
   onSyncMods: () => void;
   onCancelSync?: () => void;
@@ -55,6 +56,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   isDownloading,
   downloadProgress,
   isGameRunning,
+  isUpdateAvailable,
   onLaunch,
   onSyncMods,
   onCancelSync,
@@ -151,9 +153,10 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   const wallpaperUrl = modpack?.wallpaperUrl || manifest?.wallpaperUrl || netherBg;
   const iconUrl = modpack?.iconUrl || manifest?.iconUrl;
 
-  const installedVersion = config?.installedModpackVersion;
+  const targetTag = modpack?.tag || manifest?.tag;
+  const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || config?.installedModpackVersion;
   const isInstalled = Boolean(installedVersion);
-  const isUpToDate = isInstalled && installedVersion === manifest?.version;
+  const isUpToDate = isInstalled && (installedVersion === manifest?.version || isUpdateAvailable === false);
 
   // Comprobar estado del servidor periódicamente
   useEffect(() => {
@@ -557,7 +560,13 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                   <div className="flex items-center justify-between text-xs sm:text-sm font-minecraft text-white tracking-wider px-0.5">
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-                      <span className="minecraft-text-shadow-lava">{downloadProgress?.stage === 'extracting' ? 'EXTRAYENDO ARCHIVOS...' : 'DESCARGANDO MODPACK...'}</span>
+                      <span className="minecraft-text-shadow-lava">
+                        {downloadProgress?.stage === 'verifying'
+                          ? 'VERIFICANDO ARCHIVOS...'
+                          : downloadProgress?.stage === 'extracting'
+                          ? 'EXTRAYENDO ARCHIVOS...'
+                          : 'DESCARGANDO MODPACK...'}
+                      </span>
                     </div>
                     <span className="text-orange-400 font-bold tracking-widest text-base minecraft-text-shadow-lava">
                       {downloadProgress?.percent || 0}%
@@ -572,8 +581,12 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] font-mono text-orange-200/90 px-0.5">
-                    <span className="truncate max-w-[260px]">
-                      {downloadProgress?.stage === 'extracting' ? 'Descomprimiendo modpack...' : 'Sincronizando archivos con el servidor...'}
+                    <span className="truncate max-w-[280px]">
+                      {downloadProgress?.stage === 'verifying'
+                        ? `Comprobando archivos (${downloadProgress.transferredBytes || 0}/${downloadProgress.totalBytes || 0})...`
+                        : downloadProgress?.stage === 'extracting'
+                        ? 'Descomprimiendo modpack...'
+                        : 'Sincronizando archivos con el servidor...'}
                     </span>
                     {downloadProgress?.speedBytesPerSec ? (
                       <span className="shrink-0 font-bold ml-2 text-orange-400">

@@ -111,9 +111,13 @@ export class PackDownloader {
         fs.unlinkSync(tempZipPath);
       }
 
-      store.setConfig({
-        installedModpackVersion: manifest.version,
-      });
+      if (manifest.tag) {
+        store.setInstalledModpackVersion(manifest.tag, manifest.version);
+      } else {
+        store.setConfig({
+          installedModpackVersion: manifest.version,
+        });
+      }
 
       onProgress({
         stage: 'completed',

@@ -79,12 +79,15 @@ export class DifferentialSync {
     }
   }
 
-  private static calculateSha1(filePath: string): string {
-    if (!fs.existsSync(filePath)) return '';
-    const hash = crypto.createHash('sha1');
-    const data = fs.readFileSync(filePath);
-    hash.update(data);
-    return hash.digest('hex');
+  private static async calculateSha1Async(filePath: string): Promise<string> {
+    return new Promise((resolve) => {
+      if (!fs.existsSync(filePath)) return resolve('');
+      const hash = crypto.createHash('sha1');
+      const stream = fs.createReadStream(filePath);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', () => resolve(''));
+    });
   }
 
   public static async sync(
@@ -139,69 +142,94 @@ export class DifferentialSync {
       stage: 'verifying',
       percent: 0,
       transferredBytes: 0,
-      totalBytes: 0,
+      totalBytes: manifest.files.length,
       speedBytesPerSec: 0,
     });
 
-    // 1. Escanear y determinar qué archivos faltan o difieren
+    // 1. Escanear y determinar qué archivos faltan o difieren (procesamiento asíncrono en lotes con cesión al Event Loop)
     let checkedCount = 0;
     const totalFiles = manifest.files.length;
+    let lastProgressReportTime = 0;
 
-    for (const file of manifest.files) {
-      checkedCount++;
-      const destPath = path.join(gameDir, file.path);
-      const isMod = file.path.startsWith('mods/') || file.path.startsWith('mods\\');
-      const fileName = path.basename(file.path);
+    const BATCH_SIZE = 30;
+    for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
+      if (signal.aborted) throw new Error('CANCELLED');
+      const batch = manifest.files.slice(i, i + BATCH_SIZE);
 
-      if (isMod) {
-        validModPaths.add(fileName.toLowerCase());
-        validModPaths.add(`${fileName.toLowerCase()}.disabled`);
-      }
+      await Promise.all(
+        batch.map(async (file) => {
+          const destPath = path.join(gameDir, file.path);
+          const isMod = file.path.startsWith('mods/') || file.path.startsWith('mods\\');
+          const fileName = path.basename(file.path);
 
-      // Si es un mod opcional que el usuario tiene desactivado
-      const isDisabledMod = isMod && disabledMods.has(fileName);
-
-      if (isDisabledMod) {
-        const disabledPath = `${destPath}.disabled`;
-        if (fs.existsSync(disabledPath)) {
-          const localSha1 = this.calculateSha1(disabledPath);
-          if (localSha1 === file.sha1) {
-            // Ya está instalado y desactivado con el hash correcto
-            continue;
+          if (isMod) {
+            validModPaths.add(fileName.toLowerCase());
+            validModPaths.add(`${fileName.toLowerCase()}.disabled`);
           }
-        }
-      } else if (isMod && fs.existsSync(`${destPath}.disabled`)) {
-        // El mod NO está desactivado, pero existe con extensión .disabled en disco
-        const disabledPath = `${destPath}.disabled`;
-        const localSha1 = this.calculateSha1(disabledPath);
-        if (localSha1 === file.sha1) {
-          try {
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            fs.renameSync(disabledPath, destPath);
-            continue;
-          } catch (e) {
-            console.warn('Error renombrando mod a activo:', e);
+
+          // Si es un mod opcional que el usuario tiene desactivado
+          const isDisabledMod = isMod && disabledMods.has(fileName);
+
+          if (isDisabledMod) {
+            const disabledPath = `${destPath}.disabled`;
+            if (fs.existsSync(disabledPath)) {
+              try {
+                const stat = await fs.promises.stat(disabledPath);
+                if (stat.size === file.size) {
+                  const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
+                  if (localSha1 === file.sha1) {
+                    return; // Ya está instalado y desactivado con el hash correcto
+                  }
+                }
+              } catch {}
+            }
+          } else if (isMod && fs.existsSync(`${destPath}.disabled`)) {
+            // El mod NO está desactivado, pero existe con extensión .disabled en disco
+            const disabledPath = `${destPath}.disabled`;
+            try {
+              const stat = await fs.promises.stat(disabledPath);
+              if (stat.size === file.size) {
+                const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
+                if (localSha1 === file.sha1) {
+                  try {
+                    if (fs.existsSync(destPath)) await fs.promises.unlink(destPath);
+                    await fs.promises.rename(disabledPath, destPath);
+                    return;
+                  } catch (e) {
+                    console.warn('Error renombrando mod a activo:', e);
+                  }
+                }
+              }
+            } catch {}
           }
-        }
-      }
 
-      if (fs.existsSync(destPath)) {
-        const stat = fs.statSync(destPath);
-        if (stat.size === file.size) {
-          const localSha1 = this.calculateSha1(destPath);
-          if (localSha1 === file.sha1) {
-            // Archivo local idéntico y verificado
-            continue;
+          if (fs.existsSync(destPath)) {
+            try {
+              const stat = await fs.promises.stat(destPath);
+              if (stat.size === file.size) {
+                const localSha1 = await DifferentialSync.calculateSha1Async(destPath);
+                if (localSha1 === file.sha1) {
+                  return; // Archivo local idéntico y verificado
+                }
+              }
+            } catch {}
           }
-        }
-      }
 
-      queue.push(file);
+          queue.push(file);
+        })
+      );
 
-      if (checkedCount % 200 === 0) {
+      checkedCount += batch.length;
+
+      // Yield al event loop de Electron para garantizar que Windows nunca marque "(No responde)"
+      await new Promise((r) => setImmediate(r));
+
+      const now = Date.now();
+      if (now - lastProgressReportTime > 60 || checkedCount >= totalFiles) {
+        lastProgressReportTime = now;
         onProgress({
           stage: 'verifying',
-          percent: Math.round((checkedCount / totalFiles) * 100),
+          percent: Math.min(99, Math.round((checkedCount / totalFiles) * 100)),
           transferredBytes: checkedCount,
           totalBytes: totalFiles,
           speedBytesPerSec: 0,
@@ -211,12 +239,16 @@ export class DifferentialSync {
 
     // 2. Si no hay nada que descargar
     if (queue.length === 0) {
-      store.setConfig({ installedModpackVersion: manifest.version });
+      if (manifest.tag) {
+        store.setInstalledModpackVersion(manifest.tag, manifest.version);
+      } else {
+        store.setConfig({ installedModpackVersion: manifest.version });
+      }
       onProgress({
         stage: 'completed',
         percent: 100,
-        transferredBytes: 0,
-        totalBytes: 0,
+        transferredBytes: totalFiles,
+        totalBytes: totalFiles,
         speedBytesPerSec: 0,
       });
       return;
@@ -446,7 +478,11 @@ export class DifferentialSync {
       }
 
       // 5. Finalización
-      store.setConfig({ installedModpackVersion: manifest.version });
+      if (manifest.tag) {
+        store.setInstalledModpackVersion(manifest.tag, manifest.version);
+      } else {
+        store.setConfig({ installedModpackVersion: manifest.version });
+      }
 
       onProgress({
         stage: 'completed',

@@ -12,6 +12,7 @@ export interface LauncherConfig {
   gameDir: string;
   modpackManifestUrl: string;
   installedModpackVersion: string | null;
+  installedModpackVersions?: Record<string, string>;
   disabledOptionalMods?: string[];
   activeModpackTag?: string | null;
   optionalModsPreferences?: Record<string, boolean>;
@@ -35,6 +36,7 @@ const DEFAULT_CONFIG: LauncherConfig = {
   ),
   modpackManifestUrl: `${BACKEND_BASE}/modpacks`,
   installedModpackVersion: null,
+  installedModpackVersions: {},
   disabledOptionalMods: [],
   cachedModpacks: [],
   cachedManifests: {},
@@ -72,9 +74,14 @@ class PersistentStore {
 
         // 2. Comprobar físicamente si los mods están instalados en gameDir/mods
         const modsDir = path.join(parsed.gameDir, 'mods');
-        const hasMods = fs.existsSync(modsDir) && fs.readdirSync(modsDir).filter(f => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled')).length >= 20;
+        const hasMods =
+          fs.existsSync(modsDir) &&
+          fs.readdirSync(modsDir).filter(
+            (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'),
+          ).length >= 1;
         if (!hasMods) {
           parsed.installedModpackVersion = null;
+          parsed.installedModpackVersions = {};
         }
 
         // Si hay una cuenta Premium de Microsoft, eliminar duplicados offline del mismo nombre
@@ -108,6 +115,24 @@ class PersistentStore {
     this.config = { ...this.config, ...partial };
     this.save();
     return this.getConfig();
+  }
+
+  public getInstalledModpackVersion(tag?: string): string | null {
+    const targetTag = tag || this.config.activeModpackTag;
+    if (targetTag && this.config.installedModpackVersions?.[targetTag]) {
+      return this.config.installedModpackVersions[targetTag];
+    }
+    return this.config.installedModpackVersion || null;
+  }
+
+  public setInstalledModpackVersion(tag: string, version: string): void {
+    const versions = { ...(this.config.installedModpackVersions || {}) };
+    versions[tag] = version;
+    this.setConfig({
+      installedModpackVersions: versions,
+      installedModpackVersion: version,
+      activeModpackTag: tag,
+    });
   }
 
   public getActiveAccount(): UserAccount | null {
@@ -296,6 +321,9 @@ class PersistentStore {
       }
 
       // 3. Resetear versión instalada y mods opcionales
+      if (targetTag && this.config.installedModpackVersions) {
+        delete this.config.installedModpackVersions[targetTag];
+      }
       this.config.installedModpackVersion = null;
       this.config.disabledOptionalMods = [];
       this.config.optionalModsPreferences = {};

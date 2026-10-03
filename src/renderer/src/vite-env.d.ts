@@ -124,6 +124,7 @@ export interface LauncherConfig {
   gameDir: string;
   modpackManifestUrl: string;
   installedModpackVersion: string | null;
+  installedModpackVersions?: Record<string, string>;
 }
 
 export interface JavaInstallation {

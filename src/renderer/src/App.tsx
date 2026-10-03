@@ -114,12 +114,15 @@ export const App: React.FC = () => {
     }).catch(console.error);
 
     // 4. Suscribirse a eventos de descarga de modpack
-    const unsubModpack = window.chaosAPI.modpack.onProgress((prog) => {
+    const unsubModpack = window.chaosAPI.modpack.onProgress(async (prog) => {
       setDownloadProgress(prog);
       if (prog.stage === 'completed') {
         setIsDownloading(false);
         setIsUpdateModalOpen(false);
-        window.chaosAPI.config.get().then(setConfig).catch(console.error);
+        try {
+          const freshCfg = await window.chaosAPI.config.get();
+          if (freshCfg) setConfig(freshCfg);
+        } catch {}
         checkModpackUpdates();
       } else if (prog.stage === 'error') {
         setIsDownloading(false);
@@ -238,7 +241,11 @@ export const App: React.FC = () => {
       setIsDownloading(true);
       setLaunchError(null);
       await window.chaosAPI.modpack.downloadUpdate(selectedModpackTag || undefined);
-      checkModpackUpdates(selectedModpackTag || undefined);
+      try {
+        const freshCfg = await window.chaosAPI.config.get();
+        if (freshCfg) setConfig(freshCfg);
+      } catch {}
+      await checkModpackUpdates(selectedModpackTag || undefined);
     } catch (err: any) {
       setIsDownloading(false);
       if (err.message && err.message.includes('cancelada')) {
@@ -441,6 +448,7 @@ export const App: React.FC = () => {
                 isDownloading={isDownloading}
                 downloadProgress={downloadProgress}
                 isGameRunning={isGameRunning}
+                isUpdateAvailable={updateResult?.isUpdateAvailable}
                 onLaunch={handleLaunchGame}
                 onSyncMods={handleStartUpdate}
                 onCancelSync={handleCancelUpdate}
