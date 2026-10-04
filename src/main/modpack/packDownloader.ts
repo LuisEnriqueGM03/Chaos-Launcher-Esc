@@ -4,6 +4,7 @@ import axios from 'axios';
 import AdmZip from 'adm-zip';
 import { ModpackManifest, DownloadProgress } from './modpackManifest';
 import { store } from '../store/persistentStore';
+import { getModpackGameDir } from './modpackPaths';
 
 export class PackDownloader {
   public static async downloadAndInstall(
@@ -11,10 +12,10 @@ export class PackDownloader {
     onProgress: (progress: DownloadProgress) => void
   ): Promise<void> {
     const config = store.getConfig();
-    const gameDir = config.gameDir;
+    const targetGameDir = getModpackGameDir(config.gameDir, manifest);
 
-    if (!fs.existsSync(gameDir)) {
-      fs.mkdirSync(gameDir, { recursive: true });
+    if (!fs.existsSync(targetGameDir)) {
+      fs.mkdirSync(targetGameDir, { recursive: true });
     }
 
     const tempZipPath = path.join(store.getBaseDir(), `temp_pack_${Date.now()}.zip`);
@@ -100,7 +101,7 @@ export class PackDownloader {
       if (fs.existsSync(tempZipPath)) {
         try {
           const zip = new AdmZip(tempZipPath);
-          zip.extractAllTo(gameDir, true);
+          zip.extractAllTo(targetGameDir, true);
         } catch (zipErr: any) {
           console.warn('[PackDownloader] Advertencia al extraer archivo zip:', zipErr.message);
         }

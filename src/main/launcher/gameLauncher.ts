@@ -6,6 +6,7 @@ import { store } from '../store/persistentStore';
 import { AuthManager } from '../auth/authManager';
 import { JavaDetector } from './javaDetector';
 import { UpdateChecker } from '../modpack/updateChecker';
+import { getModpackGameDir } from '../modpack/modpackPaths';
 
 export class GameLauncher extends EventEmitter {
   private client: any;
@@ -79,7 +80,12 @@ export class GameLauncher extends EventEmitter {
     // 4. Determinar ejecutable de Java
     const javaExecutable = config.javaPath || JavaDetector.getBestJava(21);
 
-    // 5. Configurar opciones del juego
+    // 5. Configurar opciones del juego y carpeta aislada del modpack
+    const targetGameDir = getModpackGameDir(config.gameDir, manifest);
+    if (!fs.existsSync(targetGameDir)) {
+      fs.mkdirSync(targetGameDir, { recursive: true });
+    }
+
     const launchOptions: any = {
       authorization: authPayload,
       root: config.gameDir,
@@ -93,7 +99,7 @@ export class GameLauncher extends EventEmitter {
         min: '3072M',
       },
       overrides: {
-        gameDirectory: config.gameDir,
+        gameDirectory: targetGameDir,
       },
     };
 

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { ModpackManifest, ModpackItem, UpdateCheckResult } from './modpackManifest';
 import { store } from '../store/persistentStore';
+import { getModpackGameDir } from './modpackPaths';
 
 const BACKEND_URL = process.env.CHAOS_BACKEND_URL || 'http://localhost:3000/api/v1';
 
@@ -259,8 +260,18 @@ export class UpdateChecker {
     const config = store.getConfig();
     const effectiveTag = tag || config.activeModpackTag || store.getCachedModpacks()[0]?.tag || '';
 
-    // Comprobar físicamente si existen los mods o archivos del modpack en la carpeta del juego
-    const modsDir = path.join(config.gameDir, 'mods');
+    // Comprobar físicamente si existen los mods o archivos del modpack en la carpeta aislada del modpack
+    const targetModpackDir = getModpackGameDir(config.gameDir, effectiveTag);
+    const targetModsDir = path.join(targetModpackDir, 'mods');
+    const legacyModsDir = path.join(config.gameDir, 'mods');
+
+    const modsDir =
+      fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
+        ? targetModsDir
+        : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
+        ? legacyModsDir
+        : targetModsDir;
+
     const hasLocalMods =
       fs.existsSync(modsDir) &&
       (fs.readdirSync(modsDir).filter(
@@ -392,10 +403,18 @@ export class UpdateChecker {
       const remoteVersion = manifest.version;
       let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === remoteVersion);
 
-      // Verificación física de discrepancias en la carpeta local de mods:
+      // Verificación física de discrepancias en la carpeta local de mods y configs:
       // Si la versión coincide en texto, pero faltan mods requeridos o sobran mods eliminados/no permitidos
       if (isUpToDate && manifest.files && Array.isArray(manifest.files) && manifest.files.length > 0 && fs.existsSync(modsDir)) {
         try {
+          // 0. ¿Falta la carpeta de configuraciones básica?
+          const configFolder = path.join(targetModpackDir, 'config');
+          const hasManifestConfigs = manifest.files.some((f) => f.path.startsWith('config/'));
+          if (hasManifestConfigs && (!fs.existsSync(configFolder) || fs.readdirSync(configFolder).length < 5)) {
+            console.log('[UpdateChecker] Discrepancia detectada: carpeta config incompleta o ausente.');
+            isUpToDate = false;
+          }
+
           const localModsRaw = fs.readdirSync(modsDir);
           const localMods = new Set(localModsRaw.map((f) => f.toLowerCase()));
           const disabledMods = new Set(
@@ -404,7 +423,8 @@ export class UpdateChecker {
 
           const manifestModFiles = manifest.files.filter(
             (f) =>
-              (f.path.startsWith('mods/') || f.path.startsWith('mods\\') || f.path.toLowerCase().endsWith('.jar')) &&
+              (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&
+              f.path.toLowerCase().endsWith('.jar') &&
               !f.path.includes('.disabled')
           );
 
@@ -461,10 +481,19 @@ export class UpdateChecker {
 
       if (isUpToDate && cachedManifest.files && Array.isArray(cachedManifest.files) && cachedManifest.files.length > 0 && fs.existsSync(modsDir)) {
         try {
+          const configFolder = path.join(targetModpackDir, 'config');
+          const hasManifestConfigs = cachedManifest.files.some((f) => f.path.startsWith('config/'));
+          if (hasManifestConfigs && (!fs.existsSync(configFolder) || fs.readdirSync(configFolder).length < 5)) {
+            isUpToDate = false;
+          }
+
           const localMods = new Set(fs.readdirSync(modsDir).map((f) => f.toLowerCase()));
           const disabledMods = new Set(store.getDisabledOptionalMods(cachedManifest.optionalMods).map((f) => f.toLowerCase()));
           const manifestModFiles = cachedManifest.files.filter(
-            (f) => (f.path.startsWith('mods/') || f.path.startsWith('mods\\') || f.path.toLowerCase().endsWith('.jar')) && !f.path.includes('.disabled')
+            (f) =>
+              (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&
+              f.path.toLowerCase().endsWith('.jar') &&
+              !f.path.includes('.disabled')
           );
           for (const m of manifestModFiles) {
             const fileName = path.basename(m.path).toLowerCase();

@@ -28,7 +28,9 @@ import { AppUpdateModal } from './components/AppUpdateModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { MimicServerCard } from './components/MimicServerCard';
 import { RefreshModpacksModal } from './components/RefreshModpacksModal';
+import { formatFriendlyError } from './utils/errorFormatter';
 import logoTransparent from './assets/logo_transparent.png';
+import netherBg from './assets/nether_bg.jpg';
 
 export const App: React.FC = () => {
   // Estados principales
@@ -146,7 +148,7 @@ export const App: React.FC = () => {
     const unsubLaunchErr = window.chaosAPI.launcher.onError((err) => {
       setIsGameRunning(false);
       setLaunchProgress(null);
-      setLaunchError(err);
+      setLaunchError(formatFriendlyError(err));
     });
 
     // 6. Suscribirse a eventos de auto-actualización del Launcher
@@ -172,7 +174,7 @@ export const App: React.FC = () => {
     const unsubAppErr = window.chaosAPI.updater?.onError?.((err) => {
       console.warn('[App] Error en actualizador del Launcher:', err);
       setIsAppUpdating(false);
-      setAppUpdateError(err);
+      setAppUpdateError(formatFriendlyError(err));
     });
 
     return () => {
@@ -251,7 +253,7 @@ export const App: React.FC = () => {
       if (err.message && err.message.includes('cancelada')) {
         console.log('Descarga cancelada correctamente.');
       } else {
-        setLaunchError(err.message || 'Error al descargar la actualización.');
+        setLaunchError(formatFriendlyError(err));
       }
     }
   };
@@ -314,7 +316,7 @@ export const App: React.FC = () => {
       await window.chaosAPI.launcher.launch();
     } catch (err: any) {
       setIsGameRunning(false);
-      setLaunchError(err.message || 'Error al iniciar Minecraft.');
+      setLaunchError(formatFriendlyError(err));
     }
   };
 
@@ -465,18 +467,15 @@ export const App: React.FC = () => {
             {/* TAB: JUGAR (Nether / Lava Theme Artwork like the screenshot) */}
             {activeNavTab === 'play' && activeSubTab === 'play' && (
               <div className="h-full w-full relative flex flex-col justify-between p-8 overflow-hidden select-none">
-                {/* Fondo Estilo Lava / Nether (Inspirado en la imagen) */}
+                {/* Fondo Estilo Nether Titán con la imagen oficial */}
                 <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                  {/* Gradiente de fondo rojo fuego y negro obsidiana */}
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#1a0808] via-[#0d0404] to-[#080202]" />
-
-                  {/* Resplandores de Lava */}
-                  <div className="absolute -bottom-24 left-1/4 w-[600px] h-[350px] bg-red-600/25 rounded-full blur-[120px] animate-lava-flow" />
-                  <div className="absolute top-1/3 -right-24 w-[450px] h-[300px] bg-orange-600/20 rounded-full blur-[100px]" />
-                  <div className="absolute top-10 left-10 w-[300px] h-[200px] bg-amber-600/15 rounded-full blur-[90px]" />
-
-                  {/* Patrón de lava y chispas simuladas */}
-                  <div className="absolute bottom-0 inset-x-0 h-44 bg-gradient-to-t from-red-600/30 via-orange-600/15 to-transparent" />
+                  <img
+                    src={netherBg}
+                    alt="Chaos Nether Titan Background"
+                    className="w-full h-full object-cover object-center filter brightness-[0.75]"
+                  />
+                  {/* Gradiente para integración elegante con el tema del launcher */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0606] via-transparent to-black/40" />
                 </div>
 
                 {/* Minimalist Central Brand */}

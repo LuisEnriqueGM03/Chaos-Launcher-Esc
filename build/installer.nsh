@@ -1,6 +1,4 @@
 !macro customUnInstall
-  DetailPrint "Eliminando datos locales y modpacks de Chaos Launcher..."
-  RMDir /r "$APPDATA\.chaoslauncher"
-  RMDir /r "$APPDATA\chaos-launcher"
+  DetailPrint "Limpiando archivos temporales de actualización..."
   RMDir /r "$LOCALAPPDATA\chaos-launcher-updater"
 !macroend

@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { UserAccount } from '../auth/authTypes';
 import { ModpackItem, ModpackManifest } from '../modpack/modpackManifest';
+import { getModpackGameDir, getModpackModsDir } from '../modpack/modpackPaths';
 
 export interface LauncherConfig {
   accounts: UserAccount[];
@@ -72,13 +73,39 @@ class PersistentStore {
           parsed.modpackManifestUrl = DEFAULT_CONFIG.modpackManifestUrl;
         }
 
-        // 2. Comprobar físicamente si los mods están instalados en gameDir/mods
-        const modsDir = path.join(parsed.gameDir, 'mods');
-        const hasMods =
-          fs.existsSync(modsDir) &&
-          fs.readdirSync(modsDir).filter(
-            (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'),
-          ).length >= 1;
+        // 2. Comprobar físicamente si los mods están instalados en la subcarpeta del modpack o en gameDir
+        const hasModsInDirectory = (dir: string) => {
+          try {
+            return (
+              fs.existsSync(dir) &&
+              fs.readdirSync(dir).filter(
+                (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled')
+              ).length >= 1
+            );
+          } catch {
+            return false;
+          }
+        };
+
+        const activeTag = parsed.activeModpackTag || 'mimic-server';
+        const tagModsDir = getModpackModsDir(parsed.gameDir, activeTag);
+        const legacyModsDir = path.join(parsed.gameDir, 'mods');
+
+        let hasMods = hasModsInDirectory(tagModsDir) || hasModsInDirectory(legacyModsDir);
+        if (!hasMods && fs.existsSync(parsed.gameDir)) {
+          try {
+            const subdirs = fs.readdirSync(parsed.gameDir, { withFileTypes: true });
+            for (const sub of subdirs) {
+              if (sub.isDirectory() && sub.name !== 'versions' && sub.name !== 'libraries' && sub.name !== 'assets') {
+                if (hasModsInDirectory(path.join(parsed.gameDir, sub.name, 'mods'))) {
+                  hasMods = true;
+                  break;
+                }
+              }
+            }
+          } catch {}
+        }
+
         if (!hasMods) {
           parsed.installedModpackVersion = null;
           parsed.installedModpackVersions = {};
@@ -182,7 +209,14 @@ class PersistentStore {
     const disabledList = new Set<string>(this.config.disabledOptionalMods || []);
 
     if (optionalMods && Array.isArray(optionalMods)) {
-      const modsDir = path.join(this.config.gameDir, 'mods');
+      const targetModsDir = getModpackModsDir(this.config.gameDir, this.config.activeModpackTag);
+      const legacyModsDir = path.join(this.config.gameDir, 'mods');
+      const modsDir =
+        fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
+          ? targetModsDir
+          : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
+          ? legacyModsDir
+          : targetModsDir;
 
       // Limpiar de disabledList, prefs y defaults archivos que ya no existan en la lista de mods opcionales
       const validFiles = new Set(optionalMods.map((m) => m.file));
@@ -255,7 +289,14 @@ class PersistentStore {
   }
 
   public toggleOptionalMod(modFileName: string, enabled: boolean): { success: boolean; currentDisabled: string[] } {
-    const modsDir = path.join(this.config.gameDir, 'mods');
+    const targetModsDir = getModpackModsDir(this.config.gameDir, this.config.activeModpackTag);
+    const legacyModsDir = path.join(this.config.gameDir, 'mods');
+    const modsDir =
+      fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
+        ? targetModsDir
+        : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
+        ? legacyModsDir
+        : targetModsDir;
     const normalPath = path.join(modsDir, modFileName);
     const disabledPath = path.join(modsDir, `${modFileName}.disabled`);
 
@@ -293,31 +334,22 @@ class PersistentStore {
     try {
       const targetTag = tag || this.config.activeModpackTag;
 
-      // 1. Borrar archivos físicos del modpack definidos en el manifest si existe
-      if (targetTag && this.config.cachedManifests && this.config.cachedManifests[targetTag]) {
-        const manifest = this.config.cachedManifests[targetTag];
-        if (manifest.files && Array.isArray(manifest.files)) {
-          for (const f of manifest.files) {
-            try {
-              const p = path.join(this.config.gameDir, f.path);
-              if (fs.existsSync(p)) {
-                fs.rmSync(p, { force: true });
-              }
-              const pDis = `${p}.disabled`;
-              if (fs.existsSync(pDis)) {
-                fs.rmSync(pDis, { force: true });
-              }
-            } catch (e) {
-              // ignore
-            }
+      // 1. Borrar carpeta aislada del modpack y sus mods/configs
+      if (targetTag) {
+        const targetModpackDir = getModpackGameDir(this.config.gameDir, targetTag);
+        if (fs.existsSync(targetModpackDir)) {
+          try {
+            fs.rmSync(targetModpackDir, { recursive: true, force: true });
+          } catch (e) {
+            console.warn('[PersistentStore] Error borrando carpeta de modpack:', e);
           }
         }
       }
 
-      // 2. Borrar carpeta de mods completa
-      const modsDir = path.join(this.config.gameDir, 'mods');
-      if (fs.existsSync(modsDir)) {
-        fs.rmSync(modsDir, { recursive: true, force: true });
+      // 2. Limpiar legacy modsDir si quedó huérfana
+      const legacyModsDir = path.join(this.config.gameDir, 'mods');
+      if (fs.existsSync(legacyModsDir)) {
+        try { fs.rmSync(legacyModsDir, { recursive: true, force: true }); } catch {}
       }
 
       // 3. Resetear versión instalada y mods opcionales

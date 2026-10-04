@@ -6,26 +6,64 @@ import { pipeline } from 'stream/promises';
 import { ModpackManifest, ModpackFileEntry, DownloadProgress } from './modpackManifest';
 import { store } from '../store/persistentStore';
 import { PackDownloader } from './packDownloader';
+import { getModpackGameDir } from './modpackPaths';
+
+export interface DestResolution {
+  destPath: string;
+  alsoCopyPath?: string;
+}
+
+export function resolveFileDest(filePath: string, targetGameDir: string, baseGameDir: string): DestResolution {
+  const norm = filePath.replace(/\\/g, '/');
+  if (norm.startsWith('versions/') || norm.startsWith('libraries/')) {
+    return { destPath: path.join(baseGameDir, filePath) };
+  }
+  if (norm === 'EffekseerNativeForJava.dll') {
+    return {
+      destPath: path.join(targetGameDir, filePath),
+      alsoCopyPath: path.join(baseGameDir, filePath),
+    };
+  }
+  return { destPath: path.join(targetGameDir, filePath) };
+}
 
 export class DifferentialSync {
   public static activeAbortController: AbortController | null = null;
   private static downloadedInSession: string[] = [];
   private static initialVersionBeforeSync: string | null = null;
+  private static currentModpackDir: string | null = null;
 
   public static cancel(): { success: boolean; cancelled: boolean } {
-    console.log('[DifferentialSync] Cancelando sincronización y limpiando archivos descargados...');
+    console.log('[DifferentialSync] Cancelando sincronización por orden del usuario...');
     if (this.activeAbortController) {
       this.activeAbortController.abort();
+      this.activeAbortController = null;
     }
     this.cleanupSession();
     return { success: true, cancelled: true };
   }
 
+  public static cleanTempFilesOnly(dir: string): void {
+    if (!fs.existsSync(dir)) return;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          this.cleanTempFilesOnly(fullPath);
+        } else if (entry.name.includes('.tmp_') || entry.name.endsWith('.tmp')) {
+          try {
+            fs.unlinkSync(fullPath);
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
   public static cleanupSession(): void {
     const config = store.getConfig();
-    const gameDir = config.gameDir;
 
-    // 1. Borrar todos los archivos descargados durante esta sesión
+    // 1. Borrar todos los archivos descargados durante esta sesión cancelada
     for (const filePath of this.downloadedInSession) {
       try {
         if (fs.existsSync(filePath)) {
@@ -38,22 +76,11 @@ export class DifferentialSync {
     }
     this.downloadedInSession = [];
 
-    // 2. Limpiar archivos .tmp_ en todo gameDir
-    try {
-      const cleanTmp = (dir: string) => {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            cleanTmp(fullPath);
-          } else if (entry.name.includes('.tmp_') || entry.name.endsWith('.tmp')) {
-            try { fs.unlinkSync(fullPath); } catch {}
-          }
-        }
-      };
-      cleanTmp(gameDir);
-    } catch {}
+    // 2. Limpiar archivos .tmp_ temporales
+    this.cleanTempFilesOnly(config.gameDir);
+    if (this.currentModpackDir && fs.existsSync(this.currentModpackDir)) {
+      this.cleanTempFilesOnly(this.currentModpackDir);
+    }
 
     // 3. Limpiar zips temporales en baseDir
     try {
@@ -67,16 +94,6 @@ export class DifferentialSync {
         }
       }
     } catch {}
-
-    // 4. Si el modpack no estaba instalado previamente, limpiar la carpeta mods para no dejar residuos
-    if (!this.initialVersionBeforeSync) {
-      try {
-        const modsDir = path.join(gameDir, 'mods');
-        if (fs.existsSync(modsDir)) {
-          fs.rmSync(modsDir, { recursive: true, force: true });
-        }
-      } catch {}
-    }
   }
 
   private static async calculateSha1Async(filePath: string): Promise<string> {
@@ -97,41 +114,165 @@ export class DifferentialSync {
     this.activeAbortController = new AbortController();
     this.downloadedInSession = [];
     const config = store.getConfig();
-    this.initialVersionBeforeSync = config.installedModpackVersion;
+    this.initialVersionBeforeSync = manifest.tag
+      ? store.getInstalledModpackVersion(manifest.tag)
+      : config.installedModpackVersion;
     const signal = this.activeAbortController.signal;
-    const gameDir = config.gameDir;
 
-    if (!fs.existsSync(gameDir)) {
-      fs.mkdirSync(gameDir, { recursive: true });
+    const targetGameDir = getModpackGameDir(config.gameDir, manifest);
+    this.currentModpackDir = targetGameDir;
+
+    if (!fs.existsSync(targetGameDir)) {
+      fs.mkdirSync(targetGameDir, { recursive: true });
     }
 
-    // Si el manifiesto no incluye lista diferencial de archivos, intentar cargar desde modpack.json si la URL apunta a un JSON
-    if (!manifest.files || manifest.files.length === 0) {
-      const isJsonUrl = manifest.downloadUrl && (manifest.downloadUrl.endsWith('.json') || manifest.downloadUrl.includes('modpack.json'));
-      if (isJsonUrl) {
-        try {
-          console.log(`[DifferentialSync] Detectada URL de manifiesto JSON: ${manifest.downloadUrl}. Obteniendo catálogo...`);
-          onProgress({
-            stage: 'verifying',
-            percent: 5,
-            transferredBytes: 0,
-            totalBytes: 100,
-            speedBytesPerSec: 0,
-          });
-          const res = await axios.get(manifest.downloadUrl, { timeout: 12000 });
-          if (res.data && Array.isArray(res.data.files) && res.data.files.length > 0) {
-            manifest.files = res.data.files;
-            if (res.data.version) manifest.version = res.data.version;
+    // Auto-migración desde legacy gameDir/mods a targetGameDir/mods si aplica
+    const legacyModsDir = path.join(config.gameDir, 'mods');
+    const targetModsDir = path.join(targetGameDir, 'mods');
+    if (
+      fs.existsSync(legacyModsDir) &&
+      (!fs.existsSync(targetModsDir) || fs.readdirSync(targetModsDir).filter((f) => f.endsWith('.jar')).length === 0)
+    ) {
+      try {
+        const legacyJars = fs
+          .readdirSync(legacyModsDir)
+          .filter((f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'));
+        if (legacyJars.length > 0) {
+          console.log(`[DifferentialSync] Migrando ${legacyJars.length} mods previos a ${targetModsDir}...`);
+          if (!fs.existsSync(targetModsDir)) fs.mkdirSync(targetModsDir, { recursive: true });
+          for (const jar of legacyJars) {
+            const src = path.join(legacyModsDir, jar);
+            const dst = path.join(targetModsDir, jar);
+            if (!fs.existsSync(dst)) {
+              fs.copyFileSync(src, dst);
+            }
           }
-        } catch (fetchErr: any) {
-          console.warn(`[DifferentialSync] No se pudo obtener el modpack.json remoto:`, fetchErr.message);
         }
+      } catch (migErr) {
+        console.warn('[DifferentialSync] Advertencia en auto-migración de mods legacy:', migErr);
       }
     }
 
-    // Si el manifiesto no incluye lista diferencial de archivos, usar el extractor de zip tradicional o fallback seguro
+    // Extraer base del repositorio GitHub si aplica
+    const repoClean =
+      (manifest.githubRepo || '').replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '') ||
+      (manifest.downloadUrl?.includes('raw.githubusercontent.com')
+        ? manifest.downloadUrl.split('raw.githubusercontent.com/')[1]?.split('/').slice(0, 2).join('/')
+        : '');
+
+    // 1. Si el manifiesto apunta a un modpack.json remoto o está incompleto, obtener catálogo completo
+    const isJsonUrl =
+      manifest.downloadUrl &&
+      (manifest.downloadUrl.endsWith('.json') || manifest.downloadUrl.includes('modpack.json'));
+
+    if (isJsonUrl) {
+      try {
+        console.log(`[DifferentialSync] Sincronizando catálogo completo desde: ${manifest.downloadUrl}...`);
+        onProgress({
+          stage: 'verifying',
+          percent: 5,
+          transferredBytes: 0,
+          totalBytes: 100,
+          speedBytesPerSec: 0,
+        });
+        const res = await axios.get(manifest.downloadUrl, {
+          timeout: 15000,
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (res.data && Array.isArray(res.data.files) && res.data.files.length > 0) {
+          manifest.files = res.data.files;
+          if (res.data.version) manifest.version = res.data.version;
+          if (res.data.optionalMods) manifest.optionalMods = res.data.optionalMods;
+          if (res.data.githubRepo) manifest.githubRepo = res.data.githubRepo;
+        }
+      } catch (fetchErr: any) {
+        console.warn(`[DifferentialSync] Advertencia al obtener modpack.json remoto:`, fetchErr.message);
+      }
+    }
+
+    // 2. Consulta dinámica al GitHub Git Tree API:
+    // Permite que CUALQUIER archivo recién subido al repositorio (configs, shaders, resourcepacks, etc.)
+    // sea descubierto y sincronizado inmediatamente, incluso si modpack.json local aún no lo tenía.
+    if (repoClean) {
+      try {
+        console.log(`[DifferentialSync] Comprobando árbol completo de Git (${repoClean})...`);
+        const treeRes = await axios.get(`https://api.github.com/repos/${repoClean}/git/trees/main?recursive=1`, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'ChaosLauncher' },
+        });
+
+        if (treeRes.data && Array.isArray(treeRes.data.tree)) {
+          const existingMap = new Map<string, ModpackFileEntry>();
+          if (manifest.files && Array.isArray(manifest.files)) {
+            for (const f of manifest.files) {
+              if (f.path) existingMap.set(f.path.replace(/\\/g, '/').toLowerCase(), f);
+            }
+          }
+
+          let addedFromGit = 0;
+          for (const item of treeRes.data.tree) {
+            if (item.type !== 'blob') continue;
+            const itemPath = item.path.replace(/\\/g, '/');
+            const lower = itemPath.toLowerCase();
+
+            // Filtrar archivos de metadatos o git
+            if (
+              lower.startsWith('.') ||
+              lower === 'modpack.json' ||
+              lower.endsWith('readme.md') ||
+              lower.endsWith('.disabled') ||
+              lower.endsWith('.tmp')
+            ) {
+              continue;
+            }
+
+            // Omitir partes de chunks en resourcepacks/chunks/ (se manejan como el .zip correspondiente)
+            if (lower.startsWith('resourcepacks/chunks/')) {
+              continue;
+            }
+
+            if (!existingMap.has(lower)) {
+              const newEntry: ModpackFileEntry = {
+                path: itemPath,
+                size: item.size || 0,
+                sha1: '',
+                downloadUrl: `https://raw.githubusercontent.com/${repoClean}/main/${itemPath.split('/').map(encodeURIComponent).join('/')}`,
+              };
+              existingMap.set(lower, newEntry);
+              addedFromGit++;
+            }
+          }
+
+          manifest.files = Array.from(existingMap.values());
+          if (addedFromGit > 0) {
+            console.log(`[DifferentialSync] Repositorio Git sincronizado: ${manifest.files.length} archivos totales (+${addedFromGit} agregados desde Git Tree).`);
+          }
+        }
+      } catch (treeErr: any) {
+        console.warn(`[DifferentialSync] Git Tree API no disponible (${treeErr.message}). Utilizando manifiesto estándar.`);
+      }
+    }
+
+    // Si el manifiesto aún no incluye lista diferencial de archivos, usar el extractor tradicional en targetGameDir
     if (!manifest.files || manifest.files.length === 0) {
       return await PackDownloader.downloadAndInstall(manifest, onProgress);
+    }
+
+    // Leer manifiesto instalado previo si existe para comparar cambios en configs del autor vs modificaciones del usuario
+    let prevInstalledManifest: ModpackManifest | null = null;
+    const installedRecordPath = path.join(targetGameDir, '.chaos-installed.json');
+    if (fs.existsSync(installedRecordPath)) {
+      try {
+        prevInstalledManifest = JSON.parse(fs.readFileSync(installedRecordPath, 'utf8'));
+      } catch {}
+    }
+    const prevFilesMap = new Map<string, string>(); // path -> sha1
+    if (prevInstalledManifest?.files && Array.isArray(prevInstalledManifest.files)) {
+      for (const pf of prevInstalledManifest.files) {
+        if (pf.path && pf.sha1) {
+          prevFilesMap.set(pf.path.replace(/\\/g, '/').toLowerCase(), pf.sha1);
+        }
+      }
     }
 
     const disabledMods = new Set(store.getDisabledOptionalMods(manifest.optionalMods));
@@ -151,15 +292,17 @@ export class DifferentialSync {
     const totalFiles = manifest.files.length;
     let lastProgressReportTime = 0;
 
-    const BATCH_SIZE = 30;
+    const BATCH_SIZE = 50;
     for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
       if (signal.aborted) throw new Error('CANCELLED');
       const batch = manifest.files.slice(i, i + BATCH_SIZE);
 
       await Promise.all(
         batch.map(async (file) => {
-          const destPath = path.join(gameDir, file.path);
-          const isMod = file.path.startsWith('mods/') || file.path.startsWith('mods\\');
+          const normRelPath = file.path.replace(/\\/g, '/');
+          const { destPath, alsoCopyPath } = resolveFileDest(file.path, targetGameDir, config.gameDir);
+          const isMod = normRelPath.startsWith('mods/') || normRelPath.startsWith('mods\\');
+          const isConfig = normRelPath.startsWith('config/') || normRelPath.startsWith('defaultconfigs/');
           const fileName = path.basename(file.path);
 
           const baseNameLower = fileName.toLowerCase();
@@ -172,11 +315,23 @@ export class DifferentialSync {
             'command_history.txt',
             'hotbar.nbt',
             'realms_persistence.json',
+            'sodium-options.json',
+            'iris.properties',
           ]);
 
-          // Si el archivo es una configuración personal del jugador y ya existe en su PC, preservar siempre
+          // Si el archivo es una configuración personal del jugador (controles, video, servidores) y ya existe, preservar siempre
           if (USER_PROTECTED_FILES.has(baseNameLower) && fs.existsSync(destPath)) {
             return;
+          }
+
+          // Si es un archivo de configuración dentro de config/ o defaultconfigs/ y ya existe localmente:
+          if (isConfig && fs.existsSync(destPath)) {
+            const prevSha1 = prevFilesMap.get(normRelPath.toLowerCase());
+            // Si el repositorio remoto NO modificó este archivo respecto al manifest instalado previo,
+            // cualquier diferencia local se debe a ediciones del usuario -> PRESERVAR
+            if (prevSha1 && file.sha1 && prevSha1 === file.sha1) {
+              return;
+            }
           }
 
           if (isMod) {
@@ -193,6 +348,7 @@ export class DifferentialSync {
               try {
                 const stat = await fs.promises.stat(disabledPath);
                 if (stat.size === file.size) {
+                  if (!file.sha1) return;
                   const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
                   if (localSha1 === file.sha1) {
                     return; // Ya está instalado y desactivado con el hash correcto
@@ -206,6 +362,13 @@ export class DifferentialSync {
             try {
               const stat = await fs.promises.stat(disabledPath);
               if (stat.size === file.size) {
+                if (!file.sha1) {
+                  try {
+                    if (fs.existsSync(destPath)) await fs.promises.unlink(destPath);
+                    await fs.promises.rename(disabledPath, destPath);
+                    return;
+                  } catch {}
+                }
                 const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
                 if (localSha1 === file.sha1) {
                   try {
@@ -224,8 +387,17 @@ export class DifferentialSync {
             try {
               const stat = await fs.promises.stat(destPath);
               if (stat.size === file.size) {
+                if (!file.sha1) {
+                  if (alsoCopyPath && !fs.existsSync(alsoCopyPath)) {
+                    try { fs.copyFileSync(destPath, alsoCopyPath); } catch {}
+                  }
+                  return;
+                }
                 const localSha1 = await DifferentialSync.calculateSha1Async(destPath);
                 if (localSha1 === file.sha1) {
+                  if (alsoCopyPath && !fs.existsSync(alsoCopyPath)) {
+                    try { fs.copyFileSync(destPath, alsoCopyPath); } catch {}
+                  }
                   return; // Archivo local idéntico y verificado
                 }
               }
@@ -238,7 +410,7 @@ export class DifferentialSync {
 
       checkedCount += batch.length;
 
-      // Yield al event loop de Electron para garantizar que Windows nunca marque "(No responde)"
+      // Yield al event loop de Electron para garantizar respuesta continua de la UI
       await new Promise((r) => setImmediate(r));
 
       const now = Date.now();
@@ -253,6 +425,11 @@ export class DifferentialSync {
         });
       }
     }
+
+    // Guardar registro de manifiesto en disco para que en futuras comprobaciones se conozca el estado
+    try {
+      fs.writeFileSync(installedRecordPath, JSON.stringify(manifest, null, 2), 'utf8');
+    } catch {}
 
     // 2. Si no hay nada que descargar
     if (queue.length === 0) {
@@ -296,10 +473,20 @@ export class DifferentialSync {
       });
     };
 
+    // Función auxiliar para codificar segmentos de ruta de manera segura para peticiones HTTP
+    const buildSafeUrl = (base: string, relPath: string): string => {
+      const encodedSegments = relPath
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+      return `${base}/${encodedSegments}`;
+    };
+
     const downloadSingleFile = async (entry: ModpackFileEntry, retryCount = 0): Promise<void> => {
       if (signal.aborted) throw new Error('CANCELLED');
 
-      const destPath = path.join(gameDir, entry.path);
+      const { destPath, alsoCopyPath } = resolveFileDest(entry.path, targetGameDir, config.gameDir);
       const parentDir = path.dirname(destPath);
       if (!fs.existsSync(parentDir)) {
         try {
@@ -314,7 +501,9 @@ export class DifferentialSync {
 
       // Extraer base repo dinámicamente según manifest
       const repoClean = (manifest.githubRepo || '').replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
-      const rawBase = repoClean ? `https://raw.githubusercontent.com/${repoClean}/main` : (manifest.downloadUrl ? manifest.downloadUrl.replace(/\/[^/]+$/, '') : 'http://localhost:3000/api/v1/uploads');
+      const rawBase = repoClean
+        ? `https://raw.githubusercontent.com/${repoClean}/main`
+        : (manifest.downloadUrl ? manifest.downloadUrl.replace(/\/[^/]+$/, '') : 'http://localhost:3000/api/v1/uploads');
 
       // Caso A: Archivo dividido en chunks / partes transparentes
       if (entry.parts && entry.parts.length > 0) {
@@ -324,7 +513,7 @@ export class DifferentialSync {
         try {
           for (const partRel of entry.parts) {
             if (signal.aborted) throw new Error('CANCELLED');
-            const partUrl = `${rawBase}/${partRel}`;
+            const partUrl = buildSafeUrl(rawBase, partRel);
             const res = await axios({
               url: partUrl,
               method: 'GET',
@@ -370,10 +559,23 @@ export class DifferentialSync {
           }
           fs.renameSync(tempChunkPath, finalDestPath);
           DifferentialSync.downloadedInSession.push(finalDestPath);
+          if (alsoCopyPath) {
+            try {
+              const alsoDir = path.dirname(alsoCopyPath);
+              if (!fs.existsSync(alsoDir)) fs.mkdirSync(alsoDir, { recursive: true });
+              fs.copyFileSync(finalDestPath, alsoCopyPath);
+            } catch (copyErr) {
+              console.warn('[DifferentialSync] Advertencia copiando a ruta secundaria:', copyErr);
+            }
+          }
           return;
         } catch (chunkErr: any) {
           if (fs.existsSync(tempChunkPath)) {
             try { fs.unlinkSync(tempChunkPath); } catch {}
+          }
+          if (chunkErr.response?.status === 404) {
+            console.warn(`[DifferentialSync] ADVERTENCIA: Parte de "${entry.path}" no se encontró en el repositorio remoto (HTTP 404). Omitiendo.`);
+            return;
           }
           if (retryCount < 2 && !signal.aborted && chunkErr.message !== 'CANCELLED') {
             await new Promise((r) => setTimeout(r, 600));
@@ -384,7 +586,17 @@ export class DifferentialSync {
       }
 
       // Caso B: Archivo convencional individual
-      const fileUrl = entry.downloadUrl || `${rawBase}/${entry.path}`;
+      let fileUrl = entry.downloadUrl;
+      if (!fileUrl) {
+        fileUrl = buildSafeUrl(rawBase, entry.path);
+      } else {
+        try {
+          fileUrl = encodeURI(decodeURI(fileUrl));
+        } catch {
+          fileUrl = encodeURI(fileUrl);
+        }
+      }
+
       const tempPath = `${finalDestPath}.tmp_${Date.now()}`;
 
       try {
@@ -423,9 +635,22 @@ export class DifferentialSync {
         }
         fs.renameSync(tempPath, finalDestPath);
         DifferentialSync.downloadedInSession.push(finalDestPath);
+        if (alsoCopyPath) {
+          try {
+            const alsoDir = path.dirname(alsoCopyPath);
+            if (!fs.existsSync(alsoDir)) fs.mkdirSync(alsoDir, { recursive: true });
+            fs.copyFileSync(finalDestPath, alsoCopyPath);
+          } catch (copyErr) {
+            console.warn('[DifferentialSync] Advertencia copiando a ruta secundaria:', copyErr);
+          }
+        }
       } catch (err: any) {
         if (fs.existsSync(tempPath)) {
           try { fs.unlinkSync(tempPath); } catch {}
+        }
+        if (err.response?.status === 404) {
+          console.warn(`[DifferentialSync] ADVERTENCIA: El archivo "${entry.path}" no se encontró en el repositorio remoto (HTTP 404). Se omite para continuar con el modpack.`);
+          return;
         }
         if (retryCount < 2 && !signal.aborted && err.message !== 'CANCELLED') {
           await new Promise((r) => setTimeout(r, 400));
@@ -436,8 +661,8 @@ export class DifferentialSync {
     };
 
     try {
-      // Procesar en concurrencia (lotes de 6 hilos simultáneos)
-      const CONCURRENCY = 6;
+      // Procesar en concurrencia (lotes de 10 hilos simultáneos)
+      const CONCURRENCY = 10;
       for (let i = 0; i < queue.length; i += CONCURRENCY) {
         if (signal.aborted) throw new Error('CANCELLED');
         const chunk = queue.slice(i, i + CONCURRENCY);
@@ -446,15 +671,14 @@ export class DifferentialSync {
 
       if (signal.aborted) throw new Error('CANCELLED');
 
-      // 4. Limpieza de mods eliminados u obsoletos
-      const localModsDir = path.join(gameDir, 'mods');
-      if (fs.existsSync(localModsDir)) {
-        const localFiles = fs.readdirSync(localModsDir);
+      // 4. Limpieza de mods eliminados u obsoletos exclusivamente dentro de targetModsDir
+      if (fs.existsSync(targetModsDir)) {
+        const localFiles = fs.readdirSync(targetModsDir);
         for (const file of localFiles) {
           const lower = file.toLowerCase();
           if ((lower.endsWith('.jar') || lower.endsWith('.jar.disabled')) && !validModPaths.has(lower)) {
             try {
-              fs.unlinkSync(path.join(localModsDir, file));
+              fs.unlinkSync(path.join(targetModsDir, file));
               console.log(`[DifferentialSync] Eliminado mod obsoleto: ${file}`);
             } catch (e) {
               console.warn(`[DifferentialSync] No se pudo eliminar mod obsoleto ${file}:`, e);
@@ -465,7 +689,7 @@ export class DifferentialSync {
 
       // 4.5 Asegurar que los mods desactivados tengan la extensión .disabled en disco
       for (const disabledFile of disabledMods) {
-        const normalPath = path.join(localModsDir, disabledFile);
+        const normalPath = path.join(targetModsDir, disabledFile);
         const disabledPath = `${normalPath}.disabled`;
         if (fs.existsSync(normalPath)) {
           try {
@@ -481,7 +705,7 @@ export class DifferentialSync {
       if (manifest.optionalMods && Array.isArray(manifest.optionalMods)) {
         for (const optMod of manifest.optionalMods) {
           if (!disabledMods.has(optMod.file)) {
-            const normalPath = path.join(localModsDir, optMod.file);
+            const normalPath = path.join(targetModsDir, optMod.file);
             const disabledPath = `${normalPath}.disabled`;
             if (fs.existsSync(disabledPath) && !fs.existsSync(normalPath)) {
               try {
@@ -494,7 +718,13 @@ export class DifferentialSync {
         }
       }
 
-      // 5. Finalización
+      // 5. Finalización y guardado de versión instalada
+      try {
+        fs.writeFileSync(installedRecordPath, JSON.stringify(manifest, null, 2), 'utf8');
+      } catch (e) {
+        console.warn('[DifferentialSync] Advertencia guardando manifest instalado:', e);
+      }
+
       if (manifest.tag) {
         store.setInstalledModpackVersion(manifest.tag, manifest.version);
       } else {
@@ -509,11 +739,9 @@ export class DifferentialSync {
         speedBytesPerSec: 0,
       });
     } catch (err: any) {
-      if (this.activeAbortController) {
-        this.activeAbortController.abort();
-      }
-      if (signal.aborted || err.message === 'CANCELLED') {
-        console.log('[DifferentialSync] Cancelación detectada. Limpiando archivos...');
+      const isManualCancel = err.message === 'CANCELLED' || (signal && signal.aborted);
+      if (isManualCancel) {
+        console.log('[DifferentialSync] Cancelación manual por el usuario. Limpiando archivos de sesión...');
         DifferentialSync.cleanupSession();
         onProgress({
           stage: 'error',
@@ -525,8 +753,23 @@ export class DifferentialSync {
         });
         throw new Error('Descarga cancelada por el usuario.');
       }
-      DifferentialSync.cleanupSession();
+
+      console.error('[DifferentialSync] Error durante sincronización diferencial:', err);
+      // NOTE: En caso de error de red, NO eliminamos los mods ya descargados y válidos.
+      // Solo limpiamos los archivos temporales (.tmp_) para no dejar residuos.
+      DifferentialSync.cleanTempFilesOnly(targetGameDir);
+
+      onProgress({
+        stage: 'error',
+        percent: 0,
+        transferredBytes: 0,
+        totalBytes: 0,
+        speedBytesPerSec: 0,
+        errorMessage: err.message || 'Error durante la descarga del modpack.',
+      });
       throw err;
+    } finally {
+      this.activeAbortController = null;
     }
   }
 }

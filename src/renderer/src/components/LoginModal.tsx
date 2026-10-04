@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Flame, User, Globe, AlertCircle, Loader2 } from 'lucide-react';
 import logoTransparent from '../assets/logo_transparent.png';
+import { formatFriendlyError } from '../utils/errorFormatter';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       await onLoginOffline(username.trim());
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión.');
+      setError(formatFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -50,7 +51,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       if (err?.message?.includes('cancelado') || err?.message?.includes('cancel') || err?.message?.includes('closed')) {
         return;
       }
-      setError(err.message || 'Error con la autenticación de Microsoft.');
+      setError(formatFriendlyError(err));
     } finally {
       setLoading(false);
     }

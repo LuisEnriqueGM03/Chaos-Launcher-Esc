@@ -12,6 +12,7 @@ import { gameLauncher } from './launcher/gameLauncher';
 import { JavaDetector } from './launcher/javaDetector';
 import { AppUpdater } from './updater/appUpdater';
 import { UninstallerService } from './system/uninstaller';
+import { formatFriendlyError } from './utils/errorFormatter';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -207,7 +208,7 @@ ipcMain.handle('modpack:downloadUpdate', async (_, tag?: string) => {
     return { success: true, installedVersion: manifest.version };
   } catch (err: any) {
     console.error('[modpack:downloadUpdate] Error durante la descarga:', err);
-    throw new Error(err.message || 'Error al descargar la actualización.');
+    throw new Error(formatFriendlyError(err));
   }
 });
 
@@ -241,7 +242,11 @@ ipcMain.handle('modpack:deleteModpack', async (_, tag?: string) => {
 // IPC HANDLERS: LANZADOR DE MINECRAFT
 // ==========================================
 ipcMain.handle('launcher:launch', async () => {
-  return await gameLauncher.launch();
+  try {
+    return await gameLauncher.launch();
+  } catch (err: any) {
+    throw new Error(formatFriendlyError(err));
+  }
 });
 
 ipcMain.handle('launcher:isRunning', () => {
@@ -269,7 +274,7 @@ gameLauncher.on('game-started', () => {
 });
 
 gameLauncher.on('error', (err) => {
-  mainWindow?.webContents.send('launcher:error', err?.message || String(err));
+  mainWindow?.webContents.send('launcher:error', formatFriendlyError(err));
 });
 
 // ==========================================

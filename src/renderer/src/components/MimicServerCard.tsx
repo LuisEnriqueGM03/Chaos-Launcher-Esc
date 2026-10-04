@@ -827,18 +827,13 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
         {activeSubTab === 'discord' && hasDiscord && (
           <div className="relative z-10 w-full max-w-2xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200 text-center space-y-6">
             <div className="flex items-center justify-between pb-4 border-b-2 border-black text-left">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-none minecraft-slot text-[#828bf7]">
-                  <DiscordPixelIcon className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow">
-                    COMUNIDAD DE DISCORD
-                  </h3>
-                  <p className="text-xs text-[#828bf7] font-minecraft mt-0.5">
-                    Servidor oficial de {modpackName}
-                  </p>
-                </div>
+              <div>
+                <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow">
+                  COMUNIDAD DE DISCORD
+                </h3>
+                <p className="text-xs text-[#828bf7] font-minecraft mt-0.5">
+                  Servidor oficial de {modpackName}
+                </p>
               </div>
             </div>
 
