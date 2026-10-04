@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip';
 import { ModpackManifest, DownloadProgress } from './modpackManifest';
 import { store } from '../store/persistentStore';
 import { getModpackGameDir } from './modpackPaths';
+import { resolveInside, assertSafeDownloadUrl } from '../utils/safePaths';
 
 export class PackDownloader {
   public static async downloadAndInstall(
@@ -23,7 +24,9 @@ export class PackDownloader {
     try {
       const rawUrl = (manifest.downloadUrl || '').trim();
       const isHttpZip = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) && !rawUrl.toLowerCase().endsWith('.json');
-      const isLocalZip = rawUrl.length > 0 && fs.existsSync(rawUrl) && !rawUrl.toLowerCase().endsWith('.json');
+      // Los ZIP locales ya no se aceptan: un manifiesto remoto no debe poder leer rutas del disco del usuario
+      const isLocalZip = false;
+      if (isHttpZip) assertSafeDownloadUrl(rawUrl);
 
       // 1. Descarga del archivo ZIP
       if (isHttpZip) {
@@ -101,8 +104,18 @@ export class PackDownloader {
       if (fs.existsSync(tempZipPath)) {
         try {
           const zip = new AdmZip(tempZipPath);
-          zip.extractAllTo(targetGameDir, true);
+          // Extracción manual validando cada entrada (evita zip-slip)
+          for (const entry of zip.getEntries()) {
+            const dest = resolveInside(targetGameDir, entry.entryName);
+            if (entry.isDirectory) {
+              fs.mkdirSync(dest, { recursive: true });
+              continue;
+            }
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.writeFileSync(dest, entry.getData());
+          }
         } catch (zipErr: any) {
+          if (/fuera de la carpeta|no permitida/i.test(zipErr.message)) throw zipErr;
           console.warn('[PackDownloader] Advertencia al extraer archivo zip:', zipErr.message);
         }
       }

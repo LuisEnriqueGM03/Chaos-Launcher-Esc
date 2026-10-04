@@ -13,8 +13,36 @@ import { JavaDetector } from './launcher/javaDetector';
 import { AppUpdater } from './updater/appUpdater';
 import { UninstallerService } from './system/uninstaller';
 import { formatFriendlyError } from './utils/errorFormatter';
+import { isInside } from './utils/safePaths';
 
 let mainWindow: BrowserWindow | null = null;
+
+function openExternalSafe(url: string): void {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:') {
+      shell.openExternal(url);
+    } else {
+      console.warn(`[Seguridad] Bloqueada apertura externa con protocolo no permitido: ${parsed.protocol}`);
+    }
+  } catch {
+    console.warn('[Seguridad] URL externa inválida bloqueada.');
+  }
+}
+
+/** Nunca se envían tokens de acceso al renderer. */
+function publicAccount<T extends { accessToken?: string; refreshToken?: string } | null>(acc: T): T {
+  if (!acc) return acc;
+  const { accessToken, refreshToken, ...safe } = acc as any;
+  return safe as T;
+}
+
+function publicAuthState() {
+  return {
+    activeAccount: publicAccount(AuthManager.getActiveAccount()),
+    accounts: AuthManager.getAllAccounts().map((a) => publicAccount(a)),
+  };
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -30,7 +58,7 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -71,8 +99,18 @@ function createWindow() {
 
   // Prevenir navegación externa indebida
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url);
     return { action: 'deny' };
+  });
+
+  // Bloquear cualquier navegación del renderer fuera de la app (dev server o archivo local)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isDevUrl = !!process.env.VITE_DEV_SERVER_URL && url.startsWith(process.env.VITE_DEV_SERVER_URL);
+    const isLocalApp = url.startsWith('file://') || url.startsWith('http://localhost:5173');
+    if (!isDevUrl && !isLocalApp) {
+      event.preventDefault();
+      openExternalSafe(url);
+    }
   });
 
   // Inicializar el actualizador automático ligado a GitHub Releases
@@ -127,52 +165,35 @@ ipcMain.handle('window:close', () => {
 // ==========================================
 // IPC HANDLERS: AUTENTICACIÓN
 // ==========================================
-ipcMain.handle('auth:getState', () => {
-  return {
-    activeAccount: AuthManager.getActiveAccount(),
-    accounts: AuthManager.getAllAccounts(),
-  };
-});
+ipcMain.handle('auth:getState', () => publicAuthState());
 
 ipcMain.handle('auth:loginOffline', async (_, username: string) => {
-  const account = await AuthManager.loginOffline(username);
-  return {
-    activeAccount: account,
-    accounts: AuthManager.getAllAccounts(),
-  };
+  if (typeof username !== 'string') throw new Error('Apodo inválido.');
+  await AuthManager.loginOffline(username);
+  return publicAuthState();
 });
 
 ipcMain.handle('auth:loginMicrosoft', async () => {
   if (!mainWindow) throw new Error('Ventana no disponible.');
-  const account = await AuthManager.loginMicrosoft(mainWindow);
-  return {
-    activeAccount: account,
-    accounts: AuthManager.getAllAccounts(),
-  };
+  await AuthManager.loginMicrosoft(mainWindow);
+  return publicAuthState();
 });
 
 ipcMain.handle('auth:logout', () => {
   AuthManager.logout();
-  return {
-    activeAccount: null,
-    accounts: AuthManager.getAllAccounts(),
-  };
+  return { ...publicAuthState(), activeAccount: null };
 });
 
 ipcMain.handle('auth:switchAccount', (_, accountId: string) => {
-  const account = AuthManager.switchAccount(accountId);
-  return {
-    activeAccount: account,
-    accounts: AuthManager.getAllAccounts(),
-  };
+  if (typeof accountId !== 'string') throw new Error('Cuenta inválida.');
+  AuthManager.switchAccount(accountId);
+  return publicAuthState();
 });
 
 ipcMain.handle('auth:deleteAccount', (_, accountId: string) => {
+  if (typeof accountId !== 'string') throw new Error('Cuenta inválida.');
   AuthManager.deleteAccount(accountId);
-  return {
-    activeAccount: AuthManager.getActiveAccount(),
-    accounts: AuthManager.getAllAccounts(),
-  };
+  return publicAuthState();
 });
 
 // ==========================================
@@ -187,10 +208,12 @@ ipcMain.handle('modpack:refreshList', async () => {
 });
 
 ipcMain.handle('modpack:checkUpdate', async (_, tag?: string) => {
+  assertTag(tag);
   return await UpdateChecker.checkUpdate(tag);
 });
 
 ipcMain.handle('modpack:downloadUpdate', async (_, tag?: string) => {
+  assertTag(tag);
   try {
     const updateResult = await UpdateChecker.checkUpdate(tag);
     const manifest = updateResult.manifest || UpdateChecker.getDefaultManifest(tag);
@@ -217,6 +240,7 @@ ipcMain.handle('modpack:cancelDownload', async () => {
 });
 
 ipcMain.handle('modpack:getOptionalMods', async (_, tag?: string) => {
+  assertTag(tag);
   const updateResult = await UpdateChecker.checkUpdate(tag);
   const manifest = updateResult.manifest || UpdateChecker.getDefaultManifest(tag);
   const cachedModpack = store.getCachedModpacks().find((m) => m.tag === tag);
@@ -231,10 +255,14 @@ ipcMain.handle('modpack:getOptionalMods', async (_, tag?: string) => {
 });
 
 ipcMain.handle('modpack:toggleOptionalMod', (_, modFileName: string, enabled: boolean) => {
+  if (typeof modFileName !== 'string' || /[\\/]|\.\./.test(modFileName) || typeof enabled !== 'boolean') {
+    throw new Error('Mod inválido.');
+  }
   return store.toggleOptionalMod(modFileName, enabled);
 });
 
 ipcMain.handle('modpack:deleteModpack', async (_, tag?: string) => {
+  assertTag(tag);
   return store.deleteModpackFromCache(tag);
 });
 
@@ -280,12 +308,48 @@ gameLauncher.on('error', (err) => {
 // ==========================================
 // IPC HANDLERS: CONFIGURACIÓN & SISTEMA
 // ==========================================
-ipcMain.handle('config:get', () => {
-  return store.getConfig();
-});
+function assertTag(tag?: unknown): void {
+  if (tag !== undefined && tag !== null && (typeof tag !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(tag))) {
+    throw new Error('Tag de modpack inválido.');
+  }
+}
 
-ipcMain.handle('config:update', (_, partial) => {
-  return store.setConfig(partial);
+function publicConfig() {
+  const cfg = store.getConfig();
+  return { ...cfg, accounts: cfg.accounts.map((a) => publicAccount(a)) };
+}
+
+ipcMain.handle('config:get', () => publicConfig());
+
+// El renderer solo puede modificar estas claves (nada de cuentas, URLs de manifiesto, etc.)
+ipcMain.handle('config:update', (_, partial: Record<string, unknown>) => {
+  if (!partial || typeof partial !== 'object') throw new Error('Configuración inválida.');
+  const safe: Record<string, unknown> = {};
+
+  if ('allocatedRamMb' in partial) {
+    const ram = Number(partial.allocatedRamMb);
+    if (!Number.isFinite(ram) || ram < 512 || ram > 1024 * 128) throw new Error('RAM inválida.');
+    safe.allocatedRamMb = Math.round(ram);
+  }
+  if ('javaPath' in partial) {
+    const javaPath = partial.javaPath;
+    if (typeof javaPath !== 'string' || javaPath.length > 1000) throw new Error('Ruta de Java inválida.');
+    if (javaPath && !/(^|[\\/])javaw?(\.exe)?$/i.test(javaPath)) throw new Error('La ruta de Java debe apuntar a java o javaw.');
+    safe.javaPath = javaPath;
+  }
+  if ('gameDir' in partial) {
+    const gameDir = partial.gameDir;
+    if (typeof gameDir !== 'string' || !path.isAbsolute(gameDir) || gameDir.length > 1000) throw new Error('Carpeta de juego inválida.');
+    safe.gameDir = gameDir;
+  }
+  if ('activeModpackTag' in partial) {
+    const tag = partial.activeModpackTag;
+    if (tag !== null && (typeof tag !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(tag))) throw new Error('Tag inválido.');
+    safe.activeModpackTag = tag;
+  }
+
+  store.setConfig(safe);
+  return publicConfig();
 });
 
 ipcMain.handle('system:getJavaList', () => {
@@ -298,10 +362,20 @@ ipcMain.handle('system:getSystemMemory', () => {
 });
 
 ipcMain.handle('system:openFolder', (_, folderPath: string) => {
+  if (typeof folderPath !== 'string' || !folderPath) return;
+  // Solo carpetas dentro de la carpeta del juego o de los datos del launcher
+  const allowedRoots = [store.getConfig().gameDir, store.getBaseDir()];
+  if (!allowedRoots.some((root) => isInside(root, folderPath))) {
+    console.warn('[Seguridad] openFolder bloqueado fuera de las carpetas del launcher:', folderPath);
+    return;
+  }
   shell.openPath(folderPath);
 });
 
 ipcMain.handle('system:getServerStatus', async (_, host: string) => {
+  if (typeof host !== 'string' || !/^[A-Za-z0-9]([A-Za-z0-9.:-]{0,251}[A-Za-z0-9])?$/.test(host)) {
+    return { online: false, players: 0, max: 20 };
+  }
   const backendBase = process.env.CHAOS_BACKEND_URL || 'http://localhost:3000/api/v1';
   const urls: string[] = [];
   if (backendBase.includes('localhost')) {
@@ -331,7 +405,7 @@ ipcMain.handle('system:getServerStatus', async (_, host: string) => {
   }
 
   try {
-    const res = await axios.get(`https://api.mcsrvstat.us/3/${host}`, { timeout: 4000 });
+    const res = await axios.get(`https://api.mcsrvstat.us/3/${encodeURIComponent(host)}`, { timeout: 4000 });
     return {
       online: Boolean(res.data?.online),
       players: res.data?.players?.online ?? 0,

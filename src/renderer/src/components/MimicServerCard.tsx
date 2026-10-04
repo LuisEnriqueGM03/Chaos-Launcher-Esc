@@ -22,7 +22,12 @@ import {
   ExternalLink,
   X
 } from 'lucide-react';
-import { marked } from 'marked';
+import { renderSafeMarkdown } from '../utils/safeMarkdown';
+import { ModsTab } from './modpack-tabs/ModsTab';
+import { RulesTab } from './modpack-tabs/RulesTab';
+import { DiscordTab } from './modpack-tabs/DiscordTab';
+import { ChangelogTab } from './modpack-tabs/ChangelogTab';
+import { SettingsTab } from './modpack-tabs/SettingsTab';
 import { DiscordPixelIcon } from './DiscordPixelIcon';
 import { ModpackManifest, ModpackItem, DownloadProgress, LauncherConfig, UserAccount, OptionalMod, JavaInstallation } from '../vite-env';
 import netherBg from '../assets/nether_bg.jpg';
@@ -644,500 +649,35 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
         {/* PESTAÑA MODS: Renderizado inline directo */}
         {/* ======================================================== */}
         {activeSubTab === 'mods' && hasOptionalMods && (
-          <div className="relative z-10 w-full max-w-3xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200">
-            {/* Header de Instalaciones & Ajustes de Mods */}
-            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-none minecraft-slot text-amber-400">
-                  <Sliders className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow-lava">
-                    AJUSTES DE RENDIMIENTO & MODS
-                  </h3>
-                  <p className="text-xs text-amber-400/90 font-minecraft mt-0.5">
-                    Personaliza los mods pesados según la potencia de tu PC
-                  </p>
-                </div>
-              </div>
-
-              {/* Botones de herramientas del juego */}
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={isDownloading}
-                  onClick={onOpenFolder}
-                  className={`minecraft-btn-lava rounded-none flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-200 font-minecraft ${
-                    isDownloading ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
-                  }`}
-                  title="Abrir carpeta de mods en el explorador"
-                >
-                  <FolderOpen className="w-4 h-4 text-orange-400" />
-                  <span>Carpeta</span>
-                </button>
-
-                <button
-                  disabled={isDownloading}
-                  onClick={handleRefreshModpack}
-                  className={`minecraft-btn-lava rounded-none p-2 text-slate-300 transition ${
-                    isDownloading ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'hover:text-white cursor-pointer'
-                  }`}
-                  title="Recomprobar archivos"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Mensaje de feedback al cambiar mod */}
-            {statusMsg && (
-              <div className="mt-4 p-3 rounded-none minecraft-card border-amber-600/50 text-amber-200 text-xs font-minecraft flex items-center gap-2 animate-in fade-in duration-150">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>{statusMsg}</span>
-              </div>
-            )}
-
-            {/* Lista de Mods Opcionales */}
-            <div className="py-4 space-y-3">
-              {optionalMods.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-400 font-minecraft">
-                  Cargando opciones de optimización...
-                </div>
-              ) : (
-                optionalMods.map((mod) => {
-                  const isEnabled = !disabledMods.includes(mod.file);
-
-                  return (
-                    <div
-                      key={mod.id}
-                      className={`p-4 rounded-none minecraft-card flex items-center justify-between gap-4 transition ${
-                        isEnabled
-                          ? 'border-amber-600/50'
-                          : 'opacity-70'
-                      }`}
-                    >
-                      <div className="space-y-1.5 flex-1 pr-2">
-                        <div className="flex items-center gap-2.5">
-                          <span className="font-minecraft font-bold text-sm text-white minecraft-text-shadow-lava">
-                            {mod.name}
-                          </span>
-                          <span
-                            className={`text-[9px] font-minecraft font-bold px-2 py-0.5 rounded-none ${
-                              isEnabled
-                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40 minecraft-text-shadow'
-                                : 'bg-black text-slate-500 border border-slate-700/40'
-                            }`}
-                          >
-                            {isEnabled ? 'ACTIVADO' : 'DESACTIVADO'}
-                          </span>
-                        </div>
-
-                        <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                          {mod.description}
-                        </p>
-                        <p className="text-[10px] text-amber-500/70 font-mono">
-                          {mod.file}
-                        </p>
-                      </div>
-
-                      {/* Toggle Switch estilo Minecraft pixelado */}
-                      <button
-                        onClick={() => handleToggleMod(mod)}
-                        className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-none border-2 border-black transition-colors ${
-                          isEnabled
-                            ? 'bg-[#388534]'
-                            : 'bg-[#292929]'
-                        }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-4 w-5 bg-white border border-black shadow transition-transform ${
-                            isEnabled ? 'translate-x-6' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Footer de Installations */}
-            <div className="pt-3 border-t-2 border-black flex items-center justify-between text-xs text-slate-400 font-minecraft">
-              <span className="flex items-center gap-1.5 text-amber-300 text-xs">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Los cambios se aplican al instante antes de iniciar el juego.
-              </span>
-
-              {isInstalled && (
-                <button
-                  onClick={handleDeleteClick}
-                  className="minecraft-btn-lava rounded-none flex items-center gap-1.5 px-3 py-1.5 text-red-300 text-xs font-minecraft transition cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                  <span>Eliminar Modpack</span>
-                </button>
-              )}
-            </div>
-          </div>
+          <ModsTab optionalMods={optionalMods} disabledMods={disabledMods} statusMsg={statusMsg} isInstalled={isInstalled} handleRefreshModpack={handleRefreshModpack} handleToggleMod={handleToggleMod} handleDeleteClick={handleDeleteClick} isDownloading={isDownloading} onOpenFolder={onOpenFolder} />
         )}
 
         {/* ======================================================== */}
         {/* PESTAÑA NORMAS: Reglamento del Servidor (Formateado)     */}
         {/* ======================================================== */}
         {activeSubTab === 'rules' && hasRules && (
-          <div className="relative z-10 w-full max-w-3xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-none minecraft-slot text-cyan-400">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow-lava">
-                    REGLAMENTO DEL SERVIDOR
-                  </h3>
-                  <p className="text-xs text-cyan-400/90 font-minecraft mt-0.5">
-                    Pautas y normas de convivencia de {modpackName}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="prose prose-invert max-w-none space-y-3 font-minecraft text-xs sm:text-sm text-stone-200 leading-relaxed pt-5
-                [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-amber-400 [&>h1]:border-b [&>h1]:border-amber-600/40 [&>h1]:pb-2 [&>h1]:mb-3
-                [&>h2]:text-base [&>h2]:font-bold [&>h2]:text-emerald-400 [&>h2]:mt-4 [&>h2]:mb-2
-                [&>h3]:text-sm [&>h3]:font-bold [&>h3]:text-cyan-400
-                [&>p]:text-stone-300 [&>p]:leading-relaxed
-                [&>ul]:list-disc [&>ul]:list-inside [&>ul]:space-y-1.5 [&>ul>li]:text-stone-200
-                [&>ol]:list-decimal [&>ol]:list-inside [&>ol]:space-y-1.5 [&>ol>li]:text-stone-200
-                [&>blockquote]:border-l-4 [&>blockquote]:border-amber-500 [&>blockquote]:bg-amber-950/20 [&>blockquote]:p-3 [&>blockquote]:text-amber-300 [&>blockquote]:my-3
-                [&>hr]:border-stone-800 [&>hr]:my-4
-                [&>strong]:text-white [&>strong]:font-bold"
-              dangerouslySetInnerHTML={{
-                __html: rulesContent
-                  ? (marked.parse(rulesContent, { breaks: true, gfm: true }) as string)
-                  : '<p class="text-stone-400 italic">No se han especificado normas para este modpack.</p>'
-              }}
-            />
-          </div>
+          <RulesTab rulesContent={rulesContent} modpackName={modpackName} modpack={modpack} />
         )}
 
         {/* ======================================================== */}
         {/* PESTAÑA DISCORD: Comunidad & Botón Azul 3D Pixelado      */}
         {/* ======================================================== */}
         {activeSubTab === 'discord' && hasDiscord && (
-          <div className="relative z-10 w-full max-w-2xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200 text-center space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b-2 border-black text-left">
-              <div>
-                <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow">
-                  COMUNIDAD DE DISCORD
-                </h3>
-                <p className="text-xs text-[#828bf7] font-minecraft mt-0.5">
-                  Servidor oficial de {modpackName}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-8 minecraft-card border-[#5865F2]/50 bg-[#0f111c] space-y-6 max-w-lg mx-auto">
-              <div className="w-16 h-16 rounded-none minecraft-slot text-[#828bf7] mx-auto flex items-center justify-center bg-black/60 border-[#5865F2]">
-                <DiscordPixelIcon className="w-10 h-10" />
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="font-minecraft text-xl font-bold text-white minecraft-text-shadow">
-                  {modpackName.toUpperCase()}
-                </h4>
-                <p className="text-xs text-stone-300 font-sans">
-                  Únete a nuestra comunidad para enterarte de eventos, actualizaciones y recibir soporte en vivo.
-                </p>
-              </div>
-
-              {/* Botón Azul Minecraft 3D con ícono pixelado */}
-              <div className="pt-2 flex justify-center">
-                <button
-                  onClick={() => {
-                    if (discordUrl) {
-                      window.open(discordUrl, '_blank');
-                    } else {
-                      alert('No se ha configurado la URL de Discord para este modpack.');
-                    }
-                  }}
-                  className="minecraft-btn-discord px-8 py-4 font-minecraft font-bold text-sm tracking-wider flex items-center justify-center gap-3 cursor-pointer shadow-xl hover:scale-105 transition"
-                >
-                  <DiscordPixelIcon className="w-6 h-6" />
-                  <span>UNIRSE A DISCORD</span>
-                </button>
-              </div>
-
-              {discordUrl && (
-                <span className="text-[10px] font-mono text-stone-400 block pt-1 truncate">
-                  {discordUrl}
-                </span>
-              )}
-            </div>
-          </div>
+          <DiscordTab modpackName={modpackName} modpack={modpack} discordUrl={discordUrl} />
         )}
 
         {/* ======================================================== */}
         {/* PESTAÑA CHANGELOG: Historial de Novedades y Versiones     */}
         {/* ======================================================== */}
         {activeSubTab === 'changelog' && hasChangelog && (
-          <div className="relative z-10 w-full max-w-3xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200 space-y-4">
-            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-none minecraft-slot text-purple-400">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow-lava">
-                    NOTAS DE LA VERSIÓN (v{manifest?.version || modpack?.version || '1.0.0'})
-                  </h3>
-                  <p className="text-xs text-purple-400/90 font-minecraft mt-0.5">
-                    Historial de actualizaciones y mejoras
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              {changelogList.length > 0 ? (
-                changelogList.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="minecraft-slot p-3.5 flex items-start gap-3 bg-[#0f0707] border-stone-800"
-                  >
-                    <span className="text-purple-400 font-minecraft text-sm shrink-0 mt-0.5">◆</span>
-                    <span className="text-xs sm:text-sm text-stone-200 font-minecraft leading-relaxed">
-                      {item}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="p-6 text-center text-xs font-minecraft text-stone-400">
-                  No hay notas de versión registradas para esta entrega.
-                </div>
-              )}
-            </div>
-          </div>
+          <ChangelogTab modpack={modpack} changelogList={changelogList} manifest={manifest} />
         )}
 
         {/* ======================================================== */}
         {/* PESTAÑA SETTINGS: Ajustes de RAM, Java y Optimizaciones */}
         {/* ======================================================== */}
         {activeSubTab === 'settings' && (
-          <div className="relative z-10 w-full max-w-3xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200">
-            {/* Header de Ajustes */}
-            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-none minecraft-slot text-red-400">
-                  <Settings className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow-lava">
-                    AJUSTES DE RENDIMIENTO & MODPACK
-                  </h3>
-                  <p className="text-xs text-amber-400 font-minecraft mt-0.5">
-                    Asignación de memoria RAM, selector de Java y optimizaciones
-                  </p>
-                </div>
-              </div>
-
-              {settingsSaved && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-none minecraft-card border-emerald-500/50 text-xs font-minecraft text-emerald-300 animate-in fade-in">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>¡GUARDADO!</span>
-                </div>
-              )}
-            </div>
-
-            <div className="py-5 space-y-6">
-              {/* SECCIÓN 1: ASIGNACIÓN DE RAM */}
-              <div className="p-4 sm:p-5 rounded-none minecraft-card space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Cpu className="w-5 h-5 text-orange-400" />
-                    <div>
-                      <h4 className="font-minecraft font-bold text-sm text-white tracking-wide minecraft-text-shadow-lava">
-                        MEMORIA RAM ASIGNADA
-                      </h4>
-                      <p className="text-[11px] text-slate-300 font-minecraft mt-0.5">
-                        Recomendado para {modpackName}: {Math.round(recommendedRam / 1024)} GB
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-minecraft text-base font-bold text-orange-400 minecraft-slot px-3 py-1 rounded-none border border-orange-500/30">
-                      {(ramMb / 1024).toFixed(1)} GB
-                    </span>
-                  </div>
-                </div>
-
-                {/* Slider de RAM */}
-                <input
-                  type="range"
-                  min={2048}
-                  max={Math.max(4096, totalSystemRamMb - 2048)}
-                  step={512}
-                  value={ramMb}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    setRamMb(val);
-                    handleSaveSettings(val, undefined);
-                  }}
-                  className="w-full h-2.5 rounded-none bg-black accent-emerald-500 cursor-pointer"
-                />
-
-                <div className="flex justify-between text-[11px] text-slate-400 font-minecraft">
-                  <span>Mínimo: 2 GB</span>
-                  <span className="text-amber-400">Recomendado: 6 - 8 GB</span>
-                  <span>Total PC: {(totalSystemRamMb / 1024).toFixed(0)} GB</span>
-                </div>
-
-                {/* Presets rápidos de RAM */}
-                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#260c0c]">
-                  <span className="text-xs text-slate-400 font-minecraft mr-1">Presets:</span>
-                  {[4096, 6144, 8192, 10240, 12288].filter(mb => mb <= totalSystemRamMb - 1024).map((mb) => (
-                    <button
-                      key={mb}
-                      onClick={() => {
-                        setRamMb(mb);
-                        handleSaveSettings(mb, undefined);
-                      }}
-                      className={`px-3 py-1 rounded-none text-xs font-minecraft font-semibold transition cursor-pointer ${
-                        ramMb === mb
-                          ? 'minecraft-btn-green'
-                          : 'minecraft-btn-lava'
-                      }`}
-                    >
-                      {mb / 1024} GB
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* SECCIÓN 2: SELECTOR DE VERSIÓN DE JAVA */}
-              <div className="p-4 sm:p-5 rounded-none minecraft-card space-y-3 relative">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Coffee className="w-5 h-5 text-amber-400" />
-                    <div>
-                      <h4 className="font-minecraft font-bold text-sm text-white tracking-wide minecraft-text-shadow-lava">
-                        EJECUTABLE DE JAVA (JVM)
-                      </h4>
-                      <p className="text-[11px] text-slate-300 font-minecraft mt-0.5">
-                        Minecraft 1.21.1 requiere Java 21 o superior
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="text-[9px] font-minecraft font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-none border border-emerald-800/40">
-                    Java 21 Requerido
-                  </span>
-                </div>
-
-                {/* Custom dropdown */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsJavaDropdownOpen(!isJavaDropdownOpen)}
-                    className="w-full px-3.5 py-2.5 rounded-none minecraft-input flex items-center justify-between text-xs text-white transition group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5 truncate font-minecraft">
-                      <Coffee className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span className="truncate">
-                        {selectedJava
-                          ? javaList.find((j) => j.path === selectedJava)
-                            ? `Java ${javaList.find((j) => j.path === selectedJava)!.majorVersion} (${javaList.find((j) => j.path === selectedJava)!.version})`
-                            : selectedJava
-                          : 'Automático (Detectar automáticamente la mejor versión)'}
-                      </span>
-                    </div>
-                    <ChevronDown className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform ${isJavaDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {isJavaDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 rounded-none minecraft-panel p-1.5 z-50 space-y-1 animate-in fade-in duration-150 max-h-48 overflow-y-auto">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedJava('');
-                          setIsJavaDropdownOpen(false);
-                          handleSaveSettings(undefined, '');
-                        }}
-                        className={`w-full p-2.5 rounded-none text-left text-xs font-minecraft transition flex items-center justify-between cursor-pointer ${
-                          !selectedJava ? 'minecraft-card text-emerald-300 font-bold' : 'text-slate-300 hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="truncate">
-                          <div>Automático (Recomendado)</div>
-                          <div className="text-[10px] text-slate-400">Busca automáticamente Java 21 en el sistema</div>
-                        </div>
-                        {!selectedJava && <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-2" />}
-                      </button>
-
-                      {javaList.map((inst) => (
-                        <button
-                          key={inst.path}
-                          type="button"
-                          onClick={() => {
-                            setSelectedJava(inst.path);
-                            setIsJavaDropdownOpen(false);
-                            handleSaveSettings(undefined, inst.path);
-                          }}
-                          className={`w-full p-2.5 rounded-none text-left text-xs font-minecraft transition flex items-center justify-between cursor-pointer ${
-                            selectedJava === inst.path ? 'minecraft-card text-emerald-300 font-bold' : 'text-slate-300 hover:bg-white/5'
-                          }`}
-                        >
-                          <div className="truncate pr-2">
-                            <div className="text-white font-medium">Java {inst.majorVersion} ({inst.version})</div>
-                            <div className="text-[10px] text-slate-400 truncate">{inst.path}</div>
-                          </div>
-                          {selectedJava === inst.path && <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-2" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* SECCIÓN 3: CARPETA DEL JUEGO */}
-              <div className="p-4 sm:p-5 rounded-none minecraft-card flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-none minecraft-slot text-orange-400">
-                    <FolderOpen className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-minecraft font-bold text-sm text-white tracking-wide minecraft-text-shadow-lava">
-                      DIRECTORIO DE INSTALACIÓN
-                    </h4>
-                    <p className="text-[11px] text-slate-300 font-mono truncate max-w-sm mt-0.5">
-                      {config?.gameDir || 'Cargando directorio...'}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={onOpenFolder}
-                  className="minecraft-btn-lava px-3.5 py-2 rounded-none text-xs text-slate-200 transition font-minecraft cursor-pointer"
-                >
-                  Abrir Carpeta
-                </button>
-              </div>
-            </div>
-
-            {/* Footer de Ajustes */}
-            <div className="pt-4 border-t-2 border-black flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-minecraft">
-                Los cambios se guardan y aplican automáticamente para {modpackName}.
-              </span>
-
-              <button
-                onClick={() => handleSaveSettings()}
-                className="minecraft-btn-green px-6 py-2.5 font-minecraft text-xs text-white uppercase rounded-none minecraft-text-shadow tracking-wider cursor-pointer"
-              >
-                {settingsSaved ? '¡AJUSTES GUARDADOS!' : 'GUARDAR AJUSTES'}
-              </button>
-            </div>
-          </div>
+          <SettingsTab onOpenFolder={onOpenFolder} modpackName={modpackName} ramMb={ramMb} setRamMb={setRamMb} totalSystemRamMb={totalSystemRamMb} javaList={javaList} selectedJava={selectedJava} setSelectedJava={setSelectedJava} settingsSaved={settingsSaved} isJavaDropdownOpen={isJavaDropdownOpen} setIsJavaDropdownOpen={setIsJavaDropdownOpen} handleSaveSettings={handleSaveSettings} recommendedRam={recommendedRam} config={config} />
         )}
       </div>
 
@@ -1194,7 +734,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
 
               <button
                 onClick={() => {
-                  setActiveSubTab('installations');
+                  setActiveSubTab('mods');
                   setProfileMenuOpen(false);
                   loadOptionalMods();
                 }}

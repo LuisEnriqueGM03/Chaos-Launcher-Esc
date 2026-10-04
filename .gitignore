@@ -10,3 +10,8 @@ Thumbs.db
 *.tsbuildinfo
 .idea/
 *.iml
+
+# Certificados y claves privadas
+certs/*.pfx
+certs/*.key
+modpack-server-example/*.zip

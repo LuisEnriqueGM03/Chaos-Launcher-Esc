@@ -1,23 +1,16 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
-import axios from 'axios';
-import { pipeline } from 'stream/promises';
 import { ModpackManifest, ModpackFileEntry, DownloadProgress } from './modpackManifest';
 import { store } from '../store/persistentStore';
 import { PackDownloader } from './packDownloader';
 import { getModpackGameDir } from './modpackPaths';
 
-export interface DestResolution {
-  destPath: string;
-  alsoCopyPath?: string;
-}
+import { resolveFileDest } from './fileDest';
+import { calculateSha1Async } from './fileHash';
+import { resolveRemoteManifest } from './manifestResolver';
+import { downloadManifestFile, DownloadContext } from './fileDownloader';
 
-export function resolveFileDest(filePath: string, targetGameDir: string, _baseGameDir: string): DestResolution {
-  // Absolutamente todo el contenido del modpack se descarga e instala DENTRO de la carpeta del modpack (targetGameDir)
-  const destPath = path.join(targetGameDir, filePath);
-  return { destPath };
-}
+export { resolveFileDest } from './fileDest';
 
 export class DifferentialSync {
   public static activeAbortController: AbortController | null = null;
@@ -88,17 +81,6 @@ export class DifferentialSync {
     } catch {}
   }
 
-  private static async calculateSha1Async(filePath: string): Promise<string> {
-    return new Promise((resolve) => {
-      if (!fs.existsSync(filePath)) return resolve('');
-      const hash = crypto.createHash('sha1');
-      const stream = fs.createReadStream(filePath);
-      stream.on('data', (chunk) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', () => resolve(''));
-    });
-  }
-
   public static async sync(
     manifest: ModpackManifest,
     onProgress: (progress: DownloadProgress) => void
@@ -145,105 +127,7 @@ export class DifferentialSync {
       }
     }
 
-    // Extraer base del repositorio GitHub si aplica
-    const repoClean =
-      (manifest.githubRepo || '').replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '') ||
-      (manifest.downloadUrl?.includes('raw.githubusercontent.com')
-        ? manifest.downloadUrl.split('raw.githubusercontent.com/')[1]?.split('/').slice(0, 2).join('/')
-        : '');
-
-    // 1. Si el manifiesto apunta a un modpack.json remoto o está incompleto, obtener catálogo completo
-    const isJsonUrl =
-      manifest.downloadUrl &&
-      (manifest.downloadUrl.endsWith('.json') || manifest.downloadUrl.includes('modpack.json'));
-
-    if (isJsonUrl) {
-      try {
-        console.log(`[DifferentialSync] Sincronizando catálogo completo desde: ${manifest.downloadUrl}...`);
-        onProgress({
-          stage: 'verifying',
-          percent: 5,
-          transferredBytes: 0,
-          totalBytes: 100,
-          speedBytesPerSec: 0,
-        });
-        const res = await axios.get(manifest.downloadUrl, {
-          timeout: 15000,
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.data && Array.isArray(res.data.files) && res.data.files.length > 0) {
-          manifest.files = res.data.files;
-          if (res.data.version) manifest.version = res.data.version;
-          if (res.data.optionalMods) manifest.optionalMods = res.data.optionalMods;
-          if (res.data.githubRepo) manifest.githubRepo = res.data.githubRepo;
-        }
-      } catch (fetchErr: any) {
-        console.warn(`[DifferentialSync] Advertencia al obtener modpack.json remoto:`, fetchErr.message);
-      }
-    }
-
-    // 2. Consulta dinámica al GitHub Git Tree API:
-    // Permite que CUALQUIER archivo recién subido al repositorio (configs, shaders, resourcepacks, etc.)
-    // sea descubierto y sincronizado inmediatamente, incluso si modpack.json local aún no lo tenía.
-    if (repoClean) {
-      try {
-        console.log(`[DifferentialSync] Comprobando árbol completo de Git (${repoClean})...`);
-        const treeRes = await axios.get(`https://api.github.com/repos/${repoClean}/git/trees/main?recursive=1`, {
-          timeout: 10000,
-          headers: { 'User-Agent': 'ChaosLauncher' },
-        });
-
-        if (treeRes.data && Array.isArray(treeRes.data.tree)) {
-          const existingMap = new Map<string, ModpackFileEntry>();
-          if (manifest.files && Array.isArray(manifest.files)) {
-            for (const f of manifest.files) {
-              if (f.path) existingMap.set(f.path.replace(/\\/g, '/').toLowerCase(), f);
-            }
-          }
-
-          let addedFromGit = 0;
-          for (const item of treeRes.data.tree) {
-            if (item.type !== 'blob') continue;
-            const itemPath = item.path.replace(/\\/g, '/');
-            const lower = itemPath.toLowerCase();
-
-            // Filtrar archivos de metadatos o git
-            if (
-              lower.startsWith('.') ||
-              lower === 'modpack.json' ||
-              lower.endsWith('readme.md') ||
-              lower.endsWith('.disabled') ||
-              lower.endsWith('.tmp')
-            ) {
-              continue;
-            }
-
-            // Omitir partes de chunks en resourcepacks/chunks/ (se manejan como el .zip correspondiente)
-            if (lower.startsWith('resourcepacks/chunks/')) {
-              continue;
-            }
-
-            if (!existingMap.has(lower)) {
-              const newEntry: ModpackFileEntry = {
-                path: itemPath,
-                size: item.size || 0,
-                sha1: '',
-                downloadUrl: `https://raw.githubusercontent.com/${repoClean}/main/${itemPath.split('/').map(encodeURIComponent).join('/')}`,
-              };
-              existingMap.set(lower, newEntry);
-              addedFromGit++;
-            }
-          }
-
-          manifest.files = Array.from(existingMap.values());
-          if (addedFromGit > 0) {
-            console.log(`[DifferentialSync] Repositorio Git sincronizado: ${manifest.files.length} archivos totales (+${addedFromGit} agregados desde Git Tree).`);
-          }
-        }
-      } catch (treeErr: any) {
-        console.warn(`[DifferentialSync] Git Tree API no disponible (${treeErr.message}). Utilizando manifiesto estándar.`);
-      }
-    }
+    await resolveRemoteManifest(manifest, onProgress);
 
     // Si el manifiesto aún no incluye lista diferencial de archivos, usar el extractor tradicional en targetGameDir
     if (!manifest.files || manifest.files.length === 0) {
@@ -341,7 +225,7 @@ export class DifferentialSync {
                 const stat = await fs.promises.stat(disabledPath);
                 if (stat.size === file.size) {
                   if (!file.sha1) return;
-                  const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
+                  const localSha1 = await calculateSha1Async(disabledPath);
                   if (localSha1 === file.sha1) {
                     return; // Ya está instalado y desactivado con el hash correcto
                   }
@@ -361,7 +245,7 @@ export class DifferentialSync {
                     return;
                   } catch {}
                 }
-                const localSha1 = await DifferentialSync.calculateSha1Async(disabledPath);
+                const localSha1 = await calculateSha1Async(disabledPath);
                 if (localSha1 === file.sha1) {
                   try {
                     if (fs.existsSync(destPath)) await fs.promises.unlink(destPath);
@@ -385,7 +269,7 @@ export class DifferentialSync {
                   }
                   return;
                 }
-                const localSha1 = await DifferentialSync.calculateSha1Async(destPath);
+                const localSha1 = await calculateSha1Async(destPath);
                 if (localSha1 === file.sha1) {
                   if (alsoCopyPath && !fs.existsSync(alsoCopyPath)) {
                     try { fs.copyFileSync(destPath, alsoCopyPath); } catch {}
@@ -465,201 +349,32 @@ export class DifferentialSync {
       });
     };
 
-    // Función auxiliar para codificar segmentos de ruta de manera segura para peticiones HTTP
-    const buildSafeUrl = (base: string, relPath: string): string => {
-      const encodedSegments = relPath
-        .replace(/\\/g, '/')
-        .split('/')
-        .map((segment) => encodeURIComponent(segment))
-        .join('/');
-      return `${base}/${encodedSegments}`;
-    };
-
-    const downloadSingleFile = async (entry: ModpackFileEntry, retryCount = 0): Promise<void> => {
-      if (signal.aborted) throw new Error('CANCELLED');
-
-      const { destPath, alsoCopyPath } = resolveFileDest(entry.path, targetGameDir, config.gameDir);
-      const parentDir = path.dirname(destPath);
-      if (!fs.existsSync(parentDir)) {
-        try {
-          fs.mkdirSync(parentDir, { recursive: true });
-        } catch {}
-      }
-
-      const isMod = entry.path.startsWith('mods/') || entry.path.startsWith('mods\\');
-      const fileName = path.basename(entry.path);
-      const isTargetDisabled = isMod && disabledMods.has(fileName);
-      const finalDestPath = isTargetDisabled ? `${destPath}.disabled` : destPath;
-
-      // Extraer base repo dinámicamente según manifest
-      const repoClean = (manifest.githubRepo || '').replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
-      const rawBase = repoClean
-        ? `https://raw.githubusercontent.com/${repoClean}/main`
-        : (manifest.downloadUrl ? manifest.downloadUrl.replace(/\/[^/]+$/, '') : 'http://localhost:3000/api/v1/uploads');
-
-      // Caso A: Archivo dividido en chunks / partes transparentes
-      if (entry.parts && entry.parts.length > 0) {
-        const tempChunkPath = `${finalDestPath}.tmp_${Date.now()}`;
-        const chunkWriter = fs.createWriteStream(tempChunkPath);
-
-        try {
-          for (const partRel of entry.parts) {
-            if (signal.aborted) throw new Error('CANCELLED');
-            const partUrl = buildSafeUrl(rawBase, partRel);
-            const res = await axios({
-              url: partUrl,
-              method: 'GET',
-              responseType: 'stream',
-              timeout: 90000,
-              signal,
-            });
-
-            res.data.on('data', (chunk: Buffer) => {
-              if (signal.aborted) {
-                res.data.destroy();
-                chunkWriter.destroy();
-                return;
-              }
-              transferredBytes += chunk.length;
-              reportProgress();
-            });
-
-            await new Promise<void>((resolve, reject) => {
-              res.data.pipe(chunkWriter, { end: false });
-              res.data.on('end', resolve);
-              res.data.on('error', reject);
-              chunkWriter.on('error', reject);
-            });
-          }
-
-          chunkWriter.end();
-          await new Promise<void>((resolve, reject) => {
-            chunkWriter.on('close', resolve);
-            chunkWriter.on('finish', resolve);
-            chunkWriter.on('error', reject);
-          });
-
-          if (signal.aborted) {
-            if (fs.existsSync(tempChunkPath)) {
-              try { fs.unlinkSync(tempChunkPath); } catch {}
-            }
-            throw new Error('CANCELLED');
-          }
-
-          if (fs.existsSync(finalDestPath)) {
-            try { fs.unlinkSync(finalDestPath); } catch {}
-          }
-          fs.renameSync(tempChunkPath, finalDestPath);
-          DifferentialSync.downloadedInSession.push(finalDestPath);
-          if (alsoCopyPath) {
-            try {
-              const alsoDir = path.dirname(alsoCopyPath);
-              if (!fs.existsSync(alsoDir)) fs.mkdirSync(alsoDir, { recursive: true });
-              fs.copyFileSync(finalDestPath, alsoCopyPath);
-            } catch (copyErr) {
-              console.warn('[DifferentialSync] Advertencia copiando a ruta secundaria:', copyErr);
-            }
-          }
-          return;
-        } catch (chunkErr: any) {
-          if (fs.existsSync(tempChunkPath)) {
-            try { fs.unlinkSync(tempChunkPath); } catch {}
-          }
-          if (chunkErr.response?.status === 404) {
-            console.warn(`[DifferentialSync] ADVERTENCIA: Parte de "${entry.path}" no se encontró en el repositorio remoto (HTTP 404). Omitiendo.`);
-            return;
-          }
-          if (retryCount < 2 && !signal.aborted && chunkErr.message !== 'CANCELLED') {
-            await new Promise((r) => setTimeout(r, 600));
-            return downloadSingleFile(entry, retryCount + 1);
-          }
-          throw chunkErr;
-        }
-      }
-
-      // Caso B: Archivo convencional individual
-      let fileUrl = entry.downloadUrl;
-      if (!fileUrl) {
-        fileUrl = buildSafeUrl(rawBase, entry.path);
-      } else {
-        try {
-          fileUrl = encodeURI(decodeURI(fileUrl));
-        } catch {
-          fileUrl = encodeURI(fileUrl);
-        }
-      }
-
-      const tempPath = `${finalDestPath}.tmp_${Date.now()}`;
-
-      try {
-        const response = await axios({
-          url: fileUrl,
-          method: 'GET',
-          responseType: 'stream',
-          timeout: 45000,
-          signal,
-        });
-
-        const writer = fs.createWriteStream(tempPath);
-
-        response.data.on('data', (chunk: Buffer) => {
-          if (signal.aborted) {
-            response.data.destroy();
-            writer.destroy();
-            return;
-          }
-          transferredBytes += chunk.length;
-          reportProgress();
-        });
-
-        await pipeline(response.data, writer);
-
-        if (signal.aborted) {
-          if (fs.existsSync(tempPath)) {
-            try { fs.unlinkSync(tempPath); } catch {}
-          }
-          throw new Error('CANCELLED');
-        }
-
-        // Mover temp a destino final con reemplazo seguro en Windows
-        if (fs.existsSync(finalDestPath)) {
-          try { fs.unlinkSync(finalDestPath); } catch {}
-        }
-        fs.renameSync(tempPath, finalDestPath);
-        DifferentialSync.downloadedInSession.push(finalDestPath);
-        if (alsoCopyPath) {
-          try {
-            const alsoDir = path.dirname(alsoCopyPath);
-            if (!fs.existsSync(alsoDir)) fs.mkdirSync(alsoDir, { recursive: true });
-            fs.copyFileSync(finalDestPath, alsoCopyPath);
-          } catch (copyErr) {
-            console.warn('[DifferentialSync] Advertencia copiando a ruta secundaria:', copyErr);
-          }
-        }
-      } catch (err: any) {
-        if (fs.existsSync(tempPath)) {
-          try { fs.unlinkSync(tempPath); } catch {}
-        }
-        if (err.response?.status === 404) {
-          console.warn(`[DifferentialSync] ADVERTENCIA: El archivo "${entry.path}" no se encontró en el repositorio remoto (HTTP 404). Se omite para continuar con el modpack.`);
-          return;
-        }
-        if (retryCount < 2 && !signal.aborted && err.message !== 'CANCELLED') {
-          await new Promise((r) => setTimeout(r, 400));
-          return downloadSingleFile(entry, retryCount + 1);
-        }
-        throw err;
-      }
+    const downloadCtx: DownloadContext = {
+      signal,
+      targetGameDir,
+      gameDir: config.gameDir,
+      manifest,
+      disabledMods,
+      onBytes: (n: number) => {
+        transferredBytes += n;
+        reportProgress();
+      },
+      onFileInstalled: (p: string) => {
+        DifferentialSync.downloadedInSession.push(p);
+      },
     };
 
     try {
-      // Procesar en concurrencia (lotes de 10 hilos simultáneos)
-      const CONCURRENCY = 10;
-      for (let i = 0; i < queue.length; i += CONCURRENCY) {
-        if (signal.aborted) throw new Error('CANCELLED');
-        const chunk = queue.slice(i, i + CONCURRENCY);
-        await Promise.all(chunk.map((entry) => downloadSingleFile(entry)));
-      }
+      // Pool de workers: cada slot toma el siguiente archivo al terminar, sin esperar al más lento del lote
+      const CONCURRENCY = 16;
+      let nextIndex = 0;
+      const worker = async () => {
+        while (nextIndex < queue.length) {
+          if (signal.aborted) throw new Error('CANCELLED');
+          await downloadManifestFile(downloadCtx, queue[nextIndex++]);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
 
       if (signal.aborted) throw new Error('CANCELLED');
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Sparkles, RefreshCw, CheckCircle2, ArrowRight, AlertTriangle } from 'lucide-react';
-import { marked } from 'marked';
+import { renderSafeMarkdown } from '../utils/safeMarkdown';
 import { AppUpdateInfo, AppUpdateProgress } from '../vite-env';
 import logoSquare from '../assets/logo_desk_square.png';
 
@@ -132,9 +132,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   dangerouslySetInnerHTML={{
                     __html: (() => {
                       try {
-                        return marked.parse(updateInfo.releaseNotes, { breaks: true, gfm: true }) as string;
+                        return renderSafeMarkdown(updateInfo.releaseNotes);
                       } catch {
-                        return updateInfo.releaseNotes;
+                        return '';
                       }
                     })(),
                   }}

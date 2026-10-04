@@ -7,7 +7,8 @@ if (!(Test-Path $certsDir)) {
 
 $pfxPath = Join-Path $certsDir "ChaosLauncher.pfx"
 $cerPath = Join-Path $certsDir "ChaosLauncher.cer"
-$passwordPlain = "ChaosLauncher2026!"
+$passwordPlain = $env:CHAOS_CERT_PASSWORD
+if ([string]::IsNullOrWhiteSpace($passwordPlain)) { throw "Define la variable de entorno CHAOS_CERT_PASSWORD antes de ejecutar este script." }
 $securePassword = ConvertTo-SecureString -String $passwordPlain -Force -AsPlainText
 
 Write-Host "[+] Generando certificado de firma de codigo para Chaos Studio..."

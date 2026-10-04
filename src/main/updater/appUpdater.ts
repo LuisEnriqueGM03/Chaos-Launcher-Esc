@@ -1,6 +1,23 @@
 import { app, BrowserWindow } from 'electron';
 import { autoUpdater, UpdateInfo, ProgressInfo } from 'electron-updater';
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+
+/** Lee owner/repo de build.publish en package.json (única fuente de verdad); permite override por entorno. */
+function readPublishTarget(): { owner: string; repo: string } {
+  const envOwner = process.env.CHAOS_UPDATE_OWNER;
+  const envRepo = process.env.CHAOS_UPDATE_REPO;
+  if (envOwner && envRepo) return { owner: envOwner, repo: envRepo };
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
+    const publish = Array.isArray(pkg.build?.publish) ? pkg.build.publish[0] : pkg.build?.publish;
+    if (publish?.owner && publish?.repo) return { owner: publish.owner, repo: publish.repo };
+  } catch {
+    // se usa el error de abajo
+  }
+  throw new Error('No se pudo determinar el repositorio de actualizaciones (build.publish en package.json).');
+}
 
 export interface AppUpdateData {
   version: string;
@@ -20,8 +37,9 @@ export class AppUpdater {
   private static mainWindow: BrowserWindow | null = null;
   private static isChecking = false;
   private static isDownloading = false;
-  private static GITHUB_OWNER = 'LuisEnriqueGM03';
-  private static GITHUB_REPO = 'Chaos-Launcher-Esc';
+  private static readonly target = readPublishTarget();
+  private static GITHUB_OWNER = AppUpdater.target.owner;
+  private static GITHUB_REPO = AppUpdater.target.repo;
 
   public static init(window: BrowserWindow): void {
     this.mainWindow = window;
@@ -31,9 +49,8 @@ export class AppUpdater {
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = console;
 
-    // Deshabilitar la verificación estricta de Authenticode para certificados autofirmados
-    (autoUpdater as any).verifyUpdateCodeSignature = () => Promise.resolve(null);
-    (autoUpdater as any)._verifyUpdateCodeSignature = () => Promise.resolve(null);
+    // La integridad se valida con el sha512 de latest.yml (electron-updater). No se sobrescribe la verificación de firma.
+    autoUpdater.allowDowngrade = false;
 
     // Configuración de GitHub explícita por si no carga package.json
     autoUpdater.setFeedURL({

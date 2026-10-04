@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { safeStorage } from 'electron';
 import path from 'path';
 import os from 'os';
 import { UserAccount } from '../auth/authTypes';
@@ -67,6 +68,7 @@ class PersistentStore {
       if (fs.existsSync(this.configPath)) {
         const data = fs.readFileSync(this.configPath, 'utf8');
         const parsed = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+        parsed.accounts = this.decryptAccounts(parsed.accounts || []);
 
         // 1. Asegurar URL del backend actualizada
         if (!parsed.modpackManifestUrl || parsed.modpackManifestUrl.includes('raw.githubusercontent.com')) {
@@ -126,9 +128,40 @@ class PersistentStore {
     return { ...DEFAULT_CONFIG };
   }
 
+  /** Cifra el accessToken con DPAPI (safeStorage). Si no hay cifrado disponible, el token no se persiste. */
+  private serializeForDisk(): LauncherConfig {
+    const canEncrypt = (() => {
+      try { return safeStorage.isEncryptionAvailable(); } catch { return false; }
+    })();
+    return {
+      ...this.config,
+      accounts: this.config.accounts.map((acc) => {
+        const { accessToken, ...rest } = acc;
+        if (accessToken && canEncrypt) {
+          return { ...rest, accessTokenEnc: safeStorage.encryptString(accessToken).toString('base64') } as UserAccount;
+        }
+        return rest as UserAccount;
+      }),
+    };
+  }
+
+  private decryptAccounts(accounts: UserAccount[]): UserAccount[] {
+    return accounts.map((acc: any) => {
+      const { accessTokenEnc, ...rest } = acc;
+      if (accessTokenEnc) {
+        try {
+          return { ...rest, accessToken: safeStorage.decryptString(Buffer.from(accessTokenEnc, 'base64')) };
+        } catch {
+          return rest;
+        }
+      }
+      return rest;
+    });
+  }
+
   public save(): void {
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), 'utf8');
+      fs.writeFileSync(this.configPath, JSON.stringify(this.serializeForDisk(), null, 2), 'utf8');
     } catch (err) {
       console.error('Error al guardar config.json:', err);
     }
