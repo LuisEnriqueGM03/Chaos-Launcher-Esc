@@ -13,18 +13,10 @@ export interface DestResolution {
   alsoCopyPath?: string;
 }
 
-export function resolveFileDest(filePath: string, targetGameDir: string, baseGameDir: string): DestResolution {
-  const norm = filePath.replace(/\\/g, '/');
-  if (norm.startsWith('versions/') || norm.startsWith('libraries/')) {
-    return { destPath: path.join(baseGameDir, filePath) };
-  }
-  if (norm === 'EffekseerNativeForJava.dll') {
-    return {
-      destPath: path.join(targetGameDir, filePath),
-      alsoCopyPath: path.join(baseGameDir, filePath),
-    };
-  }
-  return { destPath: path.join(targetGameDir, filePath) };
+export function resolveFileDest(filePath: string, targetGameDir: string, _baseGameDir: string): DestResolution {
+  // Absolutamente todo el contenido del modpack se descarga e instala DENTRO de la carpeta del modpack (targetGameDir)
+  const destPath = path.join(targetGameDir, filePath);
+  return { destPath };
 }
 
 export class DifferentialSync {

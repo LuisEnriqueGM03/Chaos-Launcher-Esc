@@ -88,7 +88,7 @@ export class GameLauncher extends EventEmitter {
 
     const launchOptions: any = {
       authorization: authPayload,
-      root: config.gameDir,
+      root: targetGameDir,
       javaPath: javaExecutable,
       version: {
         number: manifest.minecraftVersion,
@@ -100,6 +100,8 @@ export class GameLauncher extends EventEmitter {
       },
       overrides: {
         gameDirectory: targetGameDir,
+        cwd: targetGameDir,
+        assetRoot: path.join(config.gameDir, 'assets'),
       },
     };
 
@@ -111,48 +113,73 @@ export class GameLauncher extends EventEmitter {
 
       const curseforgeInstallDir = 'C:\\Users\\luise\\curseforge\\minecraft\\Install';
 
-      // 1. Asegurar versión vanilla base (1.21.1)
-      const targetVanillaDir = path.join(config.gameDir, 'versions', manifest.minecraftVersion);
+      // 1. Asegurar versión vanilla base (1.21.1) dentro de targetGameDir
+      const targetVanillaDir = path.join(targetGameDir, 'versions', manifest.minecraftVersion);
       const cfVanillaDir = path.join(curseforgeInstallDir, 'versions', manifest.minecraftVersion);
-      if (!fs.existsSync(targetVanillaDir) && fs.existsSync(cfVanillaDir)) {
-        fs.cpSync(cfVanillaDir, targetVanillaDir, { recursive: true, force: true });
+      const gameVanillaDir = path.join(config.gameDir, 'versions', manifest.minecraftVersion);
+      if (!fs.existsSync(targetVanillaDir)) {
+        if (fs.existsSync(gameVanillaDir)) {
+          fs.cpSync(gameVanillaDir, targetVanillaDir, { recursive: true, force: true });
+        } else if (fs.existsSync(cfVanillaDir)) {
+          fs.cpSync(cfVanillaDir, targetVanillaDir, { recursive: true, force: true });
+        }
       }
 
-      // 2. Asegurar que la definición de versión existe en .chaoslauncher/game/versions/neoforge-21.1.248/
-      const targetVersionDir = path.join(config.gameDir, 'versions', customId);
+      // 2. Asegurar que la definición de versión existe dentro de targetGameDir/versions/neoforge-21.1.248/
+      const targetVersionDir = path.join(targetGameDir, 'versions', customId);
       const targetJson = path.join(targetVersionDir, `${customId}.json`);
       const targetJar = path.join(targetVersionDir, `${customId}.jar`);
 
-      const curseforgeVersionDir = path.join(curseforgeInstallDir, 'versions', customId);
-      const cfJson = path.join(curseforgeVersionDir, `${customId}.json`);
-      const cfJar = path.join(curseforgeVersionDir, `${customId}.jar`);
+      const cfVersionDir = path.join(curseforgeInstallDir, 'versions', customId);
+      const cfJson = path.join(cfVersionDir, `${customId}.json`);
+      const cfJar = path.join(cfVersionDir, `${customId}.jar`);
 
-      if (!fs.existsSync(targetJson) && fs.existsSync(cfJson)) {
-        if (!fs.existsSync(targetVersionDir)) fs.mkdirSync(targetVersionDir, { recursive: true });
-        fs.copyFileSync(cfJson, targetJson);
-        if (fs.existsSync(cfJar)) fs.copyFileSync(cfJar, targetJar);
+      const gameVersionDir = path.join(config.gameDir, 'versions', customId);
+      const gameJson = path.join(gameVersionDir, `${customId}.json`);
+      const gameJar = path.join(gameVersionDir, `${customId}.jar`);
+
+      if (!fs.existsSync(targetJson)) {
+        if (fs.existsSync(gameJson)) {
+          if (!fs.existsSync(targetVersionDir)) fs.mkdirSync(targetVersionDir, { recursive: true });
+          fs.copyFileSync(gameJson, targetJson);
+          if (fs.existsSync(gameJar)) fs.copyFileSync(gameJar, targetJar);
+        } else if (fs.existsSync(cfJson)) {
+          if (!fs.existsSync(targetVersionDir)) fs.mkdirSync(targetVersionDir, { recursive: true });
+          fs.copyFileSync(cfJson, targetJson);
+          if (fs.existsSync(cfJar)) fs.copyFileSync(cfJar, targetJar);
+        }
       }
 
-      // 3. Asegurar librerías críticas de NeoForge y client-srg
-      const targetNeoDir = path.join(config.gameDir, 'libraries', 'net', 'neoforged');
+      // 3. Asegurar librerías críticas de NeoForge y client-srg dentro de targetGameDir/libraries
+      const targetNeoDir = path.join(targetGameDir, 'libraries', 'net', 'neoforged');
+      const gameNeoDir = path.join(config.gameDir, 'libraries', 'net', 'neoforged');
       const cfNeoDir = path.join(curseforgeInstallDir, 'libraries', 'net', 'neoforged');
-      if (fs.existsSync(cfNeoDir) && (!fs.existsSync(targetNeoDir) || !fs.existsSync(path.join(targetNeoDir, 'neoforge', neoVersion)))) {
-        fs.cpSync(cfNeoDir, targetNeoDir, { recursive: true, force: true });
+      if (!fs.existsSync(targetNeoDir) || !fs.existsSync(path.join(targetNeoDir, 'neoforge', neoVersion))) {
+        if (fs.existsSync(gameNeoDir)) {
+          fs.cpSync(gameNeoDir, targetNeoDir, { recursive: true, force: true });
+        } else if (fs.existsSync(cfNeoDir)) {
+          fs.cpSync(cfNeoDir, targetNeoDir, { recursive: true, force: true });
+        }
       }
 
-      const targetMcClientDir = path.join(config.gameDir, 'libraries', 'net', 'minecraft');
+      const targetMcClientDir = path.join(targetGameDir, 'libraries', 'net', 'minecraft');
+      const gameMcClientDir = path.join(config.gameDir, 'libraries', 'net', 'minecraft');
       const cfMcClientDir = path.join(curseforgeInstallDir, 'libraries', 'net', 'minecraft');
-      if (fs.existsSync(cfMcClientDir) && !fs.existsSync(targetMcClientDir)) {
-        fs.cpSync(cfMcClientDir, targetMcClientDir, { recursive: true, force: true });
+      if (!fs.existsSync(targetMcClientDir)) {
+        if (fs.existsSync(gameMcClientDir)) {
+          fs.cpSync(gameMcClientDir, targetMcClientDir, { recursive: true, force: true });
+        } else if (fs.existsSync(cfMcClientDir)) {
+          fs.cpSync(cfMcClientDir, targetMcClientDir, { recursive: true, force: true });
+        }
       }
 
-      // 4. Cargar y procesar los argumentos JVM específicos de NeoForge
+      // 4. Cargar y procesar los argumentos JVM específicos de NeoForge desde targetGameDir
       const customArgs: string[] = [];
       if (fs.existsSync(targetJson)) {
         try {
           const neoData = JSON.parse(fs.readFileSync(targetJson, 'utf8'));
           const jvmArgs: string[] = neoData.arguments?.jvm || [];
-          const libDir = path.join(config.gameDir, 'libraries').replace(/\\/g, '/');
+          const libDir = path.join(targetGameDir, 'libraries').replace(/\\/g, '/');
           const sep = ';';
 
           for (const arg of jvmArgs) {
