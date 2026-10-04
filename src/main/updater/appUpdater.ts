@@ -4,19 +4,33 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 
-/** Lee owner/repo de build.publish en package.json (única fuente de verdad); permite override por entorno. */
+/** Debe coincidir con build.publish en package.json. */
+const DEFAULT_TARGET = { owner: 'LuisEnriqueGM03', repo: 'Chaos-Launcher-Esc' };
+
+/**
+ * Obtiene owner/repo del repositorio de actualizaciones. electron-builder elimina `build` del
+ * package.json empaquetado, así que en producción se lee `app-update.yml` (generado por el builder).
+ */
 function readPublishTarget(): { owner: string; repo: string } {
   const envOwner = process.env.CHAOS_UPDATE_OWNER;
   const envRepo = process.env.CHAOS_UPDATE_REPO;
   if (envOwner && envRepo) return { owner: envOwner, repo: envRepo };
   try {
+    const yml = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8');
+    const owner = yml.match(/^owner:\s*(\S+)/m)?.[1];
+    const repo = yml.match(/^repo:\s*(\S+)/m)?.[1];
+    if (owner && repo) return { owner, repo };
+  } catch {
+    // dev o sin app-update.yml: se prueba package.json
+  }
+  try {
     const pkg = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
     const publish = Array.isArray(pkg.build?.publish) ? pkg.build.publish[0] : pkg.build?.publish;
     if (publish?.owner && publish?.repo) return { owner: publish.owner, repo: publish.repo };
   } catch {
-    // se usa el error de abajo
+    // se usa el valor por defecto
   }
-  throw new Error('No se pudo determinar el repositorio de actualizaciones (build.publish en package.json).');
+  return DEFAULT_TARGET;
 }
 
 export interface AppUpdateData {
