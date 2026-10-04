@@ -156,7 +156,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   const targetTag = modpack?.tag || manifest?.tag;
   const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || config?.installedModpackVersion;
   const isInstalled = Boolean(installedVersion);
-  const isUpToDate = isInstalled && (installedVersion === manifest?.version || isUpdateAvailable === false);
+  const isUpToDate = isInstalled && isUpdateAvailable === false;
 
   // Comprobar estado del servidor periódicamente
   useEffect(() => {
@@ -351,7 +351,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                   if (isDownloading) return;
                   setActiveSubTab('discord');
                 }}
-                className={`px-4 py-1.5 text-xs font-minecraft tracking-wider transition rounded-none flex items-center gap-1.5 ${
+                className={`px-4 py-1.5 text-xs font-minecraft tracking-wider transition rounded-none ${
                   isDownloading ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
                 } ${
                   activeSubTab === 'discord'
@@ -359,8 +359,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                     : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <DiscordPixelIcon className="w-3.5 h-3.5 text-[#828bf7]" />
-                <span>Discord</span>
+                Discord
               </button>
             )}
 

@@ -162,6 +162,23 @@ export class DifferentialSync {
           const isMod = file.path.startsWith('mods/') || file.path.startsWith('mods\\');
           const fileName = path.basename(file.path);
 
+          const baseNameLower = fileName.toLowerCase();
+          const USER_PROTECTED_FILES = new Set([
+            'options.txt',
+            'optionsof.txt',
+            'optionsshaders.txt',
+            'servers.dat',
+            'usercache.json',
+            'command_history.txt',
+            'hotbar.nbt',
+            'realms_persistence.json',
+          ]);
+
+          // Si el archivo es una configuración personal del jugador y ya existe en su PC, preservar siempre
+          if (USER_PROTECTED_FILES.has(baseNameLower) && fs.existsSync(destPath)) {
+            return;
+          }
+
           if (isMod) {
             validModPaths.add(fileName.toLowerCase());
             validModPaths.add(`${fileName.toLowerCase()}.disabled`);

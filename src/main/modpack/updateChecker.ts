@@ -390,7 +390,60 @@ export class UpdateChecker {
       }
 
       const remoteVersion = manifest.version;
-      const isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === remoteVersion);
+      let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === remoteVersion);
+
+      // Verificación física de discrepancias en la carpeta local de mods:
+      // Si la versión coincide en texto, pero faltan mods requeridos o sobran mods eliminados/no permitidos
+      if (isUpToDate && manifest.files && Array.isArray(manifest.files) && manifest.files.length > 0 && fs.existsSync(modsDir)) {
+        try {
+          const localModsRaw = fs.readdirSync(modsDir);
+          const localMods = new Set(localModsRaw.map((f) => f.toLowerCase()));
+          const disabledMods = new Set(
+            store.getDisabledOptionalMods(manifest.optionalMods).map((f) => f.toLowerCase())
+          );
+
+          const manifestModFiles = manifest.files.filter(
+            (f) =>
+              (f.path.startsWith('mods/') || f.path.startsWith('mods\\') || f.path.toLowerCase().endsWith('.jar')) &&
+              !f.path.includes('.disabled')
+          );
+
+          // 1. ¿Falta algún mod requerido del manifiesto?
+          for (const m of manifestModFiles) {
+            const fileName = path.basename(m.path).toLowerCase();
+            const isDisabled = disabledMods.has(fileName);
+            const targetName = isDisabled ? `${fileName}.disabled` : fileName;
+            if (!localMods.has(targetName)) {
+              console.log(`[UpdateChecker] Discrepancia detectada: falta el mod "${targetName}" localmente.`);
+              isUpToDate = false;
+              break;
+            }
+          }
+
+          // 2. ¿Existe algún mod en la carpeta local que no pertenezca al modpack? (mod agregado o mod eliminado del pack)
+          if (isUpToDate) {
+            const validModNames = new Set(
+              manifestModFiles.flatMap((m) => {
+                const base = path.basename(m.path).toLowerCase();
+                return [base, `${base}.disabled`];
+              })
+            );
+
+            for (const localFile of localMods) {
+              if (localFile.endsWith('.jar') || localFile.endsWith('.jar.disabled')) {
+                if (!validModNames.has(localFile)) {
+                  console.log(`[UpdateChecker] Discrepancia detectada: mod local no reconocido o eliminado "${localFile}".`);
+                  isUpToDate = false;
+                  break;
+                }
+              }
+            }
+          }
+        } catch (discErr: any) {
+          console.warn('[UpdateChecker] Error comprobando discrepancias físicas de mods:', discErr.message);
+        }
+      }
+
       const isUpdateAvailable = !hasLocalMods || !isUpToDate;
       const isMandatory = isUpdateAvailable && manifest.forceUpdate !== false;
 
@@ -404,7 +457,41 @@ export class UpdateChecker {
     } catch (err: any) {
       console.warn('Error al comprobar actualización:', err.message);
       const cachedManifest = (effectiveTag ? store.getCachedManifest(effectiveTag) : null) || this.getDefaultManifest(effectiveTag);
-      const isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === cachedManifest.version);
+      let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === cachedManifest.version);
+
+      if (isUpToDate && cachedManifest.files && Array.isArray(cachedManifest.files) && cachedManifest.files.length > 0 && fs.existsSync(modsDir)) {
+        try {
+          const localMods = new Set(fs.readdirSync(modsDir).map((f) => f.toLowerCase()));
+          const disabledMods = new Set(store.getDisabledOptionalMods(cachedManifest.optionalMods).map((f) => f.toLowerCase()));
+          const manifestModFiles = cachedManifest.files.filter(
+            (f) => (f.path.startsWith('mods/') || f.path.startsWith('mods\\') || f.path.toLowerCase().endsWith('.jar')) && !f.path.includes('.disabled')
+          );
+          for (const m of manifestModFiles) {
+            const fileName = path.basename(m.path).toLowerCase();
+            const isDisabled = disabledMods.has(fileName);
+            const targetName = isDisabled ? `${fileName}.disabled` : fileName;
+            if (!localMods.has(targetName)) {
+              isUpToDate = false;
+              break;
+            }
+          }
+          if (isUpToDate) {
+            const validModNames = new Set(manifestModFiles.flatMap((m) => {
+              const base = path.basename(m.path).toLowerCase();
+              return [base, `${base}.disabled`];
+            }));
+            for (const localFile of localMods) {
+              if (localFile.endsWith('.jar') || localFile.endsWith('.jar.disabled')) {
+                if (!validModNames.has(localFile)) {
+                  isUpToDate = false;
+                  break;
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
       const isUpdateAvailable = !hasLocalMods || !isUpToDate;
 
       return {
