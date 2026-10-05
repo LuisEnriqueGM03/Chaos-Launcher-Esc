@@ -18,6 +18,7 @@ export const chaosAPI = {
 
   skin: {
     get: () => ipcRenderer.invoke('skin:get'),
+    renewSession: () => ipcRenderer.invoke('skin:renewSession'),
     pick: () => ipcRenderer.invoke('skin:pick'),
     apply: (dataUrl: string, variant: 'classic' | 'slim') => ipcRenderer.invoke('skin:apply', dataUrl, variant),
   },

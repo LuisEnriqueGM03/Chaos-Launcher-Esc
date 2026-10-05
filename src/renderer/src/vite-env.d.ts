@@ -171,6 +171,7 @@ export interface ChaosAPI {
   };
   skin: {
     get: () => Promise<SkinInfo>;
+    renewSession: () => Promise<SkinInfo>;
     pick: () => Promise<string | null>;
     apply: (dataUrl: string, variant: 'classic' | 'slim') => Promise<SkinInfo>;
   };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Upload, Check, Loader2, Info } from 'lucide-react';
+import { X, Upload, Check, Loader2, Info, RefreshCw } from 'lucide-react';
 import { SkinViewer, WalkingAnimation, IdleAnimation } from 'skinview3d';
 import { UserAccount, SkinInfo } from '../vite-env';
 
@@ -19,8 +19,10 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
   const [pending, setPending] = useState<string | null>(null);
   const [variant, setVariant] = useState<Variant>('classic');
   const [walking, setWalking] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [renewing, setRenewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -62,7 +64,6 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
     });
     viewer.fov = 40;
     viewer.zoom = 0.85;
-    viewer.autoRotate = true;
     viewer.autoRotateSpeed = 0.6;
     viewerRef.current = viewer;
     return () => {
@@ -81,6 +82,10 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
   }, [previewSrc, variant, isOpen]);
 
   useEffect(() => {
+    if (viewerRef.current) viewerRef.current.autoRotate = autoRotate;
+  }, [autoRotate, isOpen]);
+
+  useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
     viewer.animation = walking ? new WalkingAnimation() : new IdleAnimation();
@@ -96,6 +101,22 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
       if (dataUrl) setPending(dataUrl);
     } catch (e: any) {
       setError(e?.message || 'No se pudo abrir la imagen.');
+    }
+  };
+
+  const handleRenew = async () => {
+    setRenewing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await window.chaosAPI.skin.renewSession();
+      setInfo(updated);
+      setVariant(updated.variant);
+      if (updated.canEdit) setSuccess('Sesión renovada. Ya puedes cambiar tu skin.');
+    } catch (e: any) {
+      setError(e?.message || 'No se pudo renovar la sesión.');
+    } finally {
+      setRenewing(false);
     }
   };
 
@@ -187,6 +208,11 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
               Animación de caminar
             </label>
 
+            <label className="flex items-center gap-2 text-[11px] font-minecraft text-slate-300 cursor-pointer select-none">
+              <input type="checkbox" checked={autoRotate} onChange={(e) => setAutoRotate(e.target.checked)} />
+              Rotación automática
+            </label>
+
             <p className="text-[10px] text-slate-500 font-minecraft">Arrastra el muñeco para girarlo.</p>
 
             {info?.notice && (
@@ -194,6 +220,16 @@ export const SkinModal: React.FC<SkinModalProps> = ({ isOpen, onClose, account }
                 <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>{info.notice}</span>
               </div>
+            )}
+            {isPremium && info && !info.canEdit && (
+              <button
+                onClick={handleRenew}
+                disabled={renewing}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 minecraft-btn-amber text-white font-minecraft text-xs disabled:opacity-50 cursor-pointer"
+              >
+                {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span>RENOVAR SESIÓN</span>
+              </button>
             )}
             {error && <div className="p-2 minecraft-slot text-[11px] text-red-400 font-minecraft">{error}</div>}
             {success && (

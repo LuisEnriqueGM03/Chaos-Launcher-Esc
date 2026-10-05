@@ -4,6 +4,7 @@ import os from 'os';
 import axios from 'axios';
 import { BrowserWindow, dialog } from 'electron';
 import { UserAccount } from './authTypes';
+import { AuthManager } from './authManager';
 
 export type SkinVariant = 'classic' | 'slim';
 
@@ -92,6 +93,20 @@ async function fetchPublicMojangSkin(uuid: string): Promise<{ dataUrl: string; v
 }
 
 export class SkinManager {
+  /** Ejecuta la petición con el token actual; si Mojang responde 401/403 renueva la sesión una vez y reintenta. */
+  private static async withRefresh<T>(account: UserAccount, fn: (token?: string) => Promise<T>): Promise<T> {
+    try {
+      return await fn(account.accessToken);
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status;
+      if ((status === 401 || status === 403) && account.refreshToken) {
+        const updated = await AuthManager.refreshMicrosoft(account);
+        return fn(updated.accessToken);
+      }
+      throw err;
+    }
+  }
+
   public static async getSkin(account: UserAccount): Promise<SkinInfo> {
     if (account.type === 'offline') {
       const { png, meta } = localPaths(account.uuid);
@@ -114,10 +129,9 @@ export class SkinManager {
 
     // Premium: perfil con token; si falla, skin pública sin token.
     try {
-      const res = await axios.get(MC_API, {
-        headers: { Authorization: `Bearer ${account.accessToken}` },
-        timeout: 10000,
-      });
+      const res = await this.withRefresh(account, (token) =>
+        axios.get(MC_API, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 })
+      );
       const active = res.data?.skins?.find((s: any) => s.state === 'ACTIVE') || res.data?.skins?.[0];
       let dataUrl: string | null = null;
       if (active?.url && /^https:\/\/textures\.minecraft\.net\//.test(active.url)) {
@@ -131,7 +145,11 @@ export class SkinManager {
       };
     } catch (err: any) {
       const pub = await fetchPublicMojangSkin(account.uuid);
-      const expired = err?.response?.status === 401 || err?.response?.status === 403;
+      const expired =
+        err?.response?.status === 401 ||
+        err?.response?.status === 403 ||
+        !account.accessToken ||
+        /sesión de Microsoft expiró/.test(err?.message || '');
       return {
         dataUrl: pub?.dataUrl || (await fetchDefaultSkin(account.name)),
         variant: pub?.variant || 'classic',
@@ -171,13 +189,22 @@ export class SkinManager {
       return;
     }
 
-    const form = new FormData();
-    form.append('variant', model);
-    form.append('file', new Blob([new Uint8Array(buf)], { type: 'image/png' }), 'skin.png');
-    const res = await fetch(`${MC_API}/skins`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${account.accessToken}` },
-      body: form,
+    const res = await this.withRefresh(account, async (token) => {
+      const form = new FormData();
+      form.append('variant', model);
+      form.append('file', new Blob([new Uint8Array(buf)], { type: 'image/png' }), 'skin.png');
+      const r = await fetch(`${MC_API}/skins`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (r.status === 401 || r.status === 403) throw Object.assign(new Error('unauthorized'), { status: r.status });
+      return r;
+    }).catch((err: any) => {
+      if (err?.status === 401 || err?.status === 403) {
+        throw new Error('Tu sesión de Microsoft expiró. Cierra sesión y vuelve a iniciar con Microsoft.');
+      }
+      throw err;
     });
     if (res.status === 401 || res.status === 403) {
       throw new Error('Tu sesión de Microsoft expiró. Cierra sesión y vuelve a iniciar con Microsoft.');

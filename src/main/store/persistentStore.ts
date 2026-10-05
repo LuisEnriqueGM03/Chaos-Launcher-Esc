@@ -136,9 +136,12 @@ class PersistentStore {
     return {
       ...this.config,
       accounts: this.config.accounts.map((acc) => {
-        const { accessToken, ...rest } = acc as any;
-        if (accessToken && canEncrypt) {
-          return { ...rest, accessTokenEnc: safeStorage.encryptString(accessToken).toString('base64') } as UserAccount;
+        const { accessToken, refreshToken, ...rest } = acc as any;
+        if (canEncrypt) {
+          const out: any = { ...rest };
+          if (accessToken) out.accessTokenEnc = safeStorage.encryptString(accessToken).toString('base64');
+          if (refreshToken) out.refreshTokenEnc = safeStorage.encryptString(refreshToken).toString('base64');
+          return out as UserAccount;
         }
         // Sin cifrado disponible (antes de app ready) se conserva el token cifrado existente en vez de perderlo.
         return rest as UserAccount;
@@ -148,14 +151,14 @@ class PersistentStore {
 
   /** Descifra los tokens guardados. Debe llamarse una vez que la app está lista (app.whenReady). */
   public unlockAccounts(): void {
+    const dec = (v: string) => safeStorage.decryptString(Buffer.from(v, 'base64'));
     this.config.accounts = this.config.accounts.map((acc: any) => {
-      const { accessTokenEnc, ...rest } = acc;
-      if (!accessTokenEnc) return acc;
-      try {
-        return { ...rest, accessToken: safeStorage.decryptString(Buffer.from(accessTokenEnc, 'base64')) };
-      } catch {
-        return rest;
-      }
+      const { accessTokenEnc, refreshTokenEnc, ...rest } = acc;
+      if (!accessTokenEnc && !refreshTokenEnc) return acc;
+      const out: any = { ...rest };
+      try { if (accessTokenEnc) out.accessToken = dec(accessTokenEnc); } catch {}
+      try { if (refreshTokenEnc) out.refreshToken = dec(refreshTokenEnc); } catch {}
+      return out;
     });
   }
 

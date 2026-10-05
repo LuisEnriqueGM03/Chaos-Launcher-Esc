@@ -132,6 +132,7 @@ export class AuthManager {
         uuid: profile.id,
         skinUrl: `https://mc-heads.net/avatar/${encodeURIComponent(profile.name)}/100`,
         accessToken: mclcAuth.access_token,
+        refreshToken: xbox.save(),
       };
 
       store.addOrUpdateAccount(account);
@@ -144,6 +145,32 @@ export class AuthManager {
       }
       console.error('Error al iniciar sesión con Microsoft:', err);
       throw new Error(err.message || 'Fallo al autenticar con Microsoft.');
+    }
+  }
+
+  /**
+   * Renueva la sesión de Microsoft de una cuenta usando su token de renovación y guarda los tokens nuevos.
+   * Lanza error si no hay token de renovación o Microsoft lo rechaza (hay que volver a iniciar sesión).
+   */
+  public static async refreshMicrosoft(account: UserAccount): Promise<UserAccount> {
+    if (account.type !== 'microsoft' || !account.refreshToken) {
+      throw new Error('Tu sesión de Microsoft expiró. Cierra sesión y vuelve a iniciar con Microsoft.');
+    }
+    try {
+      const msmc = await import('msmc');
+      const auth = new msmc.Auth('login');
+      const xbox = await auth.refresh(account.refreshToken);
+      const mc = await xbox.getMinecraft();
+      const updated: UserAccount = {
+        ...account,
+        accessToken: mc.mclc().access_token,
+        refreshToken: xbox.save(),
+      };
+      store.addOrUpdateAccount(updated);
+      return updated;
+    } catch (err) {
+      console.warn('No se pudo renovar la sesión de Microsoft:', err);
+      throw new Error('Tu sesión de Microsoft expiró. Cierra sesión y vuelve a iniciar con Microsoft.');
     }
   }
 

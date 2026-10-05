@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: ChaosStudio.ChaosLauncher
+PackageVersion: 1.0.9
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+UpgradeBehavior: install
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/LuisEnriqueGM03/Chaos-Launcher-Esc/releases/download/v1.0.9/ChaosLauncher-Setup-1.0.9.exe
+  InstallerSha256: 3F8C42BC2A65B37E5F41F12AC4CE6A0F9CEF55A2C77FF3DEA43CB717B6A1229B
+ManifestType: installer
+ManifestVersion: 1.6.0

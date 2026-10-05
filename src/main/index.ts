@@ -207,6 +207,21 @@ ipcMain.handle('skin:get', async () => {
   return SkinManager.getSkin(account);
 });
 
+// Renueva la sesión de Microsoft: primero con el token de renovación; si falla, abre el inicio de sesión.
+ipcMain.handle('skin:renewSession', async () => {
+  const account = AuthManager.getActiveAccount();
+  if (!account || account.type !== 'microsoft') throw new Error('Solo las cuentas premium tienen sesión de Microsoft.');
+  try {
+    await AuthManager.refreshMicrosoft(account);
+  } catch {
+    if (!mainWindow) throw new Error('Ventana no disponible.');
+    await AuthManager.loginMicrosoft(mainWindow);
+  }
+  const current = AuthManager.getActiveAccount();
+  if (!current) throw new Error('No se pudo renovar la sesión.');
+  return SkinManager.getSkin(current);
+});
+
 ipcMain.handle('skin:pick', async () => SkinManager.pickSkinFile(mainWindow));
 
 ipcMain.handle('skin:apply', async (_, dataUrl: string, variant: string) => {

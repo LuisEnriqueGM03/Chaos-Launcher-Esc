@@ -60,9 +60,18 @@ export class GameLauncher extends EventEmitter {
     }
 
     // 2. Verificación de cuenta activa
-    const activeAccount = AuthManager.getActiveAccount();
+    let activeAccount = AuthManager.getActiveAccount();
     if (!activeAccount) {
       throw new Error('No hay ninguna cuenta seleccionada. Inicia sesión primero.');
+    }
+
+    // Renueva el token de Microsoft antes de jugar (los tokens de acceso caducan en ~24 h)
+    if (activeAccount.type === 'microsoft' && activeAccount.refreshToken) {
+      try {
+        activeAccount = await AuthManager.refreshMicrosoft(activeAccount);
+      } catch {
+        // Se continúa con el token actual; si caducó, el servidor lo rechazará
+      }
     }
 
     const config = store.getConfig();
