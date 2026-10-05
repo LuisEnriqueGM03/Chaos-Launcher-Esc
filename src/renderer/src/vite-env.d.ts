@@ -189,6 +189,7 @@ export interface ChaosAPI {
   };
   launcher: {
     launch: (tag?: string) => Promise<void>;
+    setKeepOpen: (keep: boolean) => Promise<void>;
     isRunning: () => Promise<boolean>;
     onProgress: (callback: (progress: any) => void) => () => void;
     onLog: (callback: (logLine: string) => void) => () => void;

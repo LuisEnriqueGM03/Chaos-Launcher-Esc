@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
   Settings, 
@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Clock,
   ExternalLink,
+  Terminal,
   X
 } from 'lucide-react';
 import { renderSafeMarkdown } from '../utils/safeMarkdown';
@@ -28,6 +29,7 @@ import { RulesTab } from './modpack-tabs/RulesTab';
 import { DiscordTab } from './modpack-tabs/DiscordTab';
 import { ChangelogTab } from './modpack-tabs/ChangelogTab';
 import { SettingsTab } from './modpack-tabs/SettingsTab';
+import { ConsoleTab } from './modpack-tabs/ConsoleTab';
 import { DiscordPixelIcon } from './DiscordPixelIcon';
 import { ModpackManifest, ModpackItem, DownloadProgress, LauncherConfig, UserAccount, OptionalMod, JavaInstallation } from '../vite-env';
 import netherBg from '../assets/nether_bg.jpg';
@@ -49,6 +51,11 @@ interface MimicServerCardProps {
   onOpenFolder: () => void;
   onRefresh: () => void;
   onRefreshModpackList?: () => void;
+  onOpenConsole?: () => void;
+  logs?: string[];
+  onClearLogs?: () => void;
+  keepLauncherOpen?: boolean;
+  onKeepLauncherOpenChange?: (keep: boolean) => void;
   onOpenLoginModal: () => void;
   onConfigChange?: (updatedConfig: LauncherConfig) => void;
 }
@@ -70,10 +77,15 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   onOpenFolder,
   onRefresh,
   onRefreshModpackList,
+  onOpenConsole,
+  logs = [],
+  onClearLogs,
+  keepLauncherOpen = false,
+  onKeepLauncherOpenChange,
   onOpenLoginModal,
   onConfigChange,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'play' | 'mods' | 'rules' | 'discord' | 'changelog' | 'settings'>('play');
+  const [activeSubTab, setActiveSubTab] = useState<'play' | 'mods' | 'rules' | 'discord' | 'changelog' | 'settings' | 'console'>('play');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   // Estado del servidor (En línea / Desconectado)
@@ -209,6 +221,15 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
       setActiveSubTab('play');
     }
   }, [hasOptionalMods, activeSubTab]);
+
+  // Con la consola activada, al darle Jugar se pasa solo a verla
+  const wasGameRunning = useRef(false);
+  useEffect(() => {
+    if (isGameRunning && !wasGameRunning.current && keepLauncherOpen && onOpenConsole) {
+      setActiveSubTab('console');
+    }
+    wasGameRunning.current = isGameRunning;
+  }, [isGameRunning, keepLauncherOpen, onOpenConsole]);
 
   const loadOptionalMods = async () => {
     const tag = modpack?.tag;
@@ -678,6 +699,17 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
         {/* ======================================================== */}
         {/* PESTAÑA SETTINGS: Ajustes de RAM, Java y Optimizaciones */}
         {/* ======================================================== */}
+        {activeSubTab === 'console' && (
+          <ConsoleTab
+            modpackName={modpackName}
+            logs={logs}
+            onClearLogs={() => onClearLogs?.()}
+            isGameRunning={isGameRunning}
+            keepLauncherOpen={keepLauncherOpen}
+            onKeepLauncherOpenChange={(keep) => onKeepLauncherOpenChange?.(keep)}
+          />
+        )}
+
         {activeSubTab === 'settings' && (
           <SettingsTab onOpenFolder={onOpenFolder} modpackName={modpackName} ramMb={ramMb} setRamMb={setRamMb} totalSystemRamMb={totalSystemRamMb} javaList={javaList} selectedJava={selectedJava} setSelectedJava={setSelectedJava} settingsSaved={settingsSaved} isJavaDropdownOpen={isJavaDropdownOpen} setIsJavaDropdownOpen={setIsJavaDropdownOpen} handleSaveSettings={handleSaveSettings} recommendedRam={recommendedRam} config={config} />
         )}
@@ -806,6 +838,30 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
           >
             <RefreshCw className="w-5 h-5 text-amber-300 filter drop-shadow-[1px_1px_0_#4a2a00]" />
           </button>
+
+          {/* Consola: salida del juego en tiempo real */}
+          {onOpenConsole && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeSubTab === 'console') {
+                  setActiveSubTab('play');
+                } else {
+                  onOpenConsole();
+                  setActiveSubTab('console');
+                }
+              }}
+              className={`relative h-12 w-12 flex items-center justify-center minecraft-btn-amber cursor-pointer active:translate-y-0.5 shrink-0 ${
+                activeSubTab === 'console' ? 'brightness-125 border-b-4 border-b-emerald-400' : ''
+              }`}
+              title={activeSubTab === 'console' ? 'Cerrar la consola' : 'Consola del juego (tiempo real)'}
+            >
+              <Terminal className="w-5 h-5 text-amber-300 filter drop-shadow-[1px_1px_0_#4a2a00]" />
+              {isGameRunning && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+          )}
 
           {activeAccount ? (
             <div className="flex items-center gap-3 minecraft-card rounded-none px-4 py-2 border-2 border-black">

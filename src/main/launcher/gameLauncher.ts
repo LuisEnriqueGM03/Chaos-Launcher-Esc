@@ -9,6 +9,7 @@ import { UpdateChecker } from '../modpack/updateChecker';
 import { getModpackGameDir } from '../modpack/modpackPaths';
 import { ensureVanillaVersionJson } from './vanillaVersion';
 import { ensureFabricProfile } from './fabricProfile';
+import { redactSecrets } from '../utils/redact';
 
 export class GameLauncher extends EventEmitter {
   private client: any;
@@ -35,12 +36,12 @@ export class GameLauncher extends EventEmitter {
     this.client.on('debug', (e: any) => {
       const line = String(e);
       this.debugTail = [...this.debugTail.slice(-39), line];
-      this.emit('log', line + '\n');
+      this.emit('log', redactSecrets(line) + '\n');
     });
 
     this.client.on('data', (e: any) => {
       const line = e.toString();
-      this.emit('log', line);
+      this.emit('log', redactSecrets(line));
     });
 
     this.client.on('close', (code: any) => {

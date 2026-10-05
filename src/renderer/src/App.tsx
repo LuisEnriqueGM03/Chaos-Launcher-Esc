@@ -63,6 +63,8 @@ export const App: React.FC = () => {
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [launchProgress, setLaunchProgress] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  // Con la consola activada el launcher no se cierra al abrirse el juego
+  const [keepLauncherOpen, setKeepLauncherOpen] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
 
   // Modales y drawers
@@ -149,7 +151,9 @@ export const App: React.FC = () => {
     });
 
     const unsubLaunchLog = window.chaosAPI.launcher.onLog((line) => {
-      setLogs((prev) => [...prev.slice(-300), line]);
+      // Cada bloque de salida puede traer varias líneas
+      const lines = String(line).split(/\r?\n/).filter((l) => l.length > 0);
+      if (lines.length > 0) setLogs((prev) => [...prev, ...lines].slice(-2000));
     });
 
     const unsubLaunchClosed = window.chaosAPI.launcher.onClosed(() => {
@@ -347,6 +351,7 @@ export const App: React.FC = () => {
     }
 
     setLaunchError(null);
+    setLogs([]);
     setIsGameRunning(true);
 
     try {
@@ -356,6 +361,14 @@ export const App: React.FC = () => {
       setLaunchError(formatFriendlyError(err));
     }
   };
+
+  const handleKeepLauncherOpen = (keep: boolean) => {
+    setKeepLauncherOpen(keep);
+    window.chaosAPI?.launcher.setKeepOpen(keep).catch(console.error);
+  };
+
+  // Abrir la consola activa también "mantener el launcher abierto": si no, se cerraría al abrirse el juego
+  const handleOpenConsole = () => handleKeepLauncherOpen(true);
 
   const handleLogout = async () => {
     const newState = await window.chaosAPI.auth.logout();
@@ -510,6 +523,11 @@ export const App: React.FC = () => {
                 onOpenFolder={() => config && window.chaosAPI?.system.openFolder(config.gameDir)}
                 onRefresh={() => checkModpackUpdates(selectedModpackTag || undefined)}
                 onRefreshModpackList={handleRefreshModpacks}
+                onOpenConsole={handleOpenConsole}
+                logs={logs}
+                onClearLogs={() => setLogs([])}
+                keepLauncherOpen={keepLauncherOpen}
+                onKeepLauncherOpenChange={handleKeepLauncherOpen}
                 onOpenLoginModal={() => setIsLoginModalOpen(true)}
                 onConfigChange={(updated) => setConfig(updated)}
               />

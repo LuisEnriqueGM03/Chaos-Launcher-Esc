@@ -43,6 +43,7 @@ export const chaosAPI = {
 
   launcher: {
     launch: (tag?: string) => ipcRenderer.invoke('launcher:launch', tag),
+    setKeepOpen: (keep: boolean) => ipcRenderer.invoke('launcher:setKeepOpen', keep),
     isRunning: () => ipcRenderer.invoke('launcher:isRunning'),
     onProgress: (callback: (progress: any) => void) => {
       const listener = (_: any, data: any) => callback(data);

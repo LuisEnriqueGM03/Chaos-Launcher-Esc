@@ -368,6 +368,12 @@ gameLauncher.on('game-closed', (code) => {
 
 // El launcher se cierra cuando el juego ya abrió su ventana (o tras un margen), no nada más lanzar el proceso:
 // así, si Java muere al arrancar, el jugador ve el error en vez de que el launcher desaparezca sin más.
+// Con la consola activada el launcher no se cierra: así se ve la salida del juego en tiempo real
+let keepLauncherOpen = false;
+ipcMain.handle('launcher:setKeepOpen', (_, keep: unknown) => {
+  keepLauncherOpen = keep === true;
+});
+
 let closeAfterLaunchTimer: NodeJS.Timeout | null = null;
 let gameWindowSeen = false;
 const clearCloseTimer = () => {
@@ -376,6 +382,7 @@ const clearCloseTimer = () => {
 };
 const closeLauncherForGame = () => {
   clearCloseTimer();
+  if (keepLauncherOpen) return;
   mainWindow?.close();
 };
 
