@@ -10,6 +10,14 @@ export interface UserAccount {
   refreshToken?: string;
 }
 
+export interface SkinInfo {
+  dataUrl: string | null;
+  variant: 'classic' | 'slim';
+  canEdit: boolean;
+  mode: 'mojang' | 'local';
+  notice?: string;
+}
+
 export interface AuthState {
   activeAccount: UserAccount | null;
   accounts: UserAccount[];
@@ -161,6 +169,11 @@ export interface ChaosAPI {
     switchAccount: (accountId: string) => Promise<AuthState>;
     deleteAccount: (accountId: string) => Promise<AuthState>;
   };
+  skin: {
+    get: () => Promise<SkinInfo>;
+    pick: () => Promise<string | null>;
+    apply: (dataUrl: string, variant: 'classic' | 'slim') => Promise<SkinInfo>;
+  };
   modpack: {
     getAll: () => Promise<ModpackItem[]>;
     refreshList: () => Promise<ModpackItem[]>;
@@ -185,6 +198,7 @@ export interface ChaosAPI {
     update: (partial: Partial<LauncherConfig>) => Promise<LauncherConfig>;
   };
   updater: {
+    getVersion: () => Promise<string>;
     checkForUpdates: () => Promise<void>;
     startDownload: () => Promise<void>;
     quitAndInstall: () => Promise<void>;

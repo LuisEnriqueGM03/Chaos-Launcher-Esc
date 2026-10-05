@@ -5,7 +5,8 @@ import {
   LogOut, 
   UserPlus,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Shirt
 } from 'lucide-react';
 import { UserAccount, ModpackItem } from '../vite-env';
 import logoTransparent from '../assets/logo_transparent.png';
@@ -25,6 +26,7 @@ interface SidebarProps {
   onDeleteAccount?: (id: string) => void;
   onOpenLoginModal: () => void;
   onOpenSettings: () => void;
+  onOpenSkin?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteAccount,
   onOpenLoginModal,
   onOpenSettings,
+  onOpenSkin,
 }) => {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
@@ -81,6 +84,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {activeAccount.type === 'microsoft' ? 'Premium' : 'Offline'}
                 </div>
               </div>
+
+              {onOpenSkin && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isDownloading) onOpenSkin();
+                  }}
+                  className="p-1 text-amber-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
+                  title="Cambiar skin"
+                >
+                  <Shirt className="w-4 h-4" />
+                </button>
+              )}
 
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${
                 accountMenuOpen ? 'rotate-180' : ''

@@ -23,6 +23,7 @@ import {
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { LoginModal } from './components/LoginModal';
+import { SkinModal } from './components/SkinModal';
 import { MandatoryUpdateModal } from './components/MandatoryUpdateModal';
 import { AppUpdateModal } from './components/AppUpdateModal';
 import { SettingsDrawer } from './components/SettingsDrawer';
@@ -64,6 +65,12 @@ export const App: React.FC = () => {
 
   // Modales y drawers
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSkinModalOpen, setIsSkinModalOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  useEffect(() => {
+    window.chaosAPI.updater.getVersion().then(setAppVersion).catch(() => {});
+  }, []);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRefreshingModpacks, setIsRefreshingModpacks] = useState(false);
@@ -418,6 +425,7 @@ export const App: React.FC = () => {
           onDeleteAccount={handleDeleteAccount}
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSkin={() => setIsSkinModalOpen(true)}
         />
 
         {/* Right Main Area */}
@@ -597,6 +605,11 @@ export const App: React.FC = () => {
       </div>
 
       {/* Modales y Drawers */}
+      <SkinModal
+        isOpen={isSkinModalOpen}
+        onClose={() => setIsSkinModalOpen(false)}
+        account={authState.activeAccount}
+      />
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
@@ -648,7 +661,7 @@ export const App: React.FC = () => {
         isDownloading={isAppUpdating}
         isDownloaded={isAppUpdateDownloaded}
         errorMessage={appUpdateError}
-        currentVersion="1.0.0"
+        currentVersion={appVersion}
         onStartDownload={handleStartAppUpdate}
         onQuitAndInstall={handleQuitAndInstallApp}
       />

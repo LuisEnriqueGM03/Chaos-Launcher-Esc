@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import axios from 'axios';
 import { AuthManager } from './auth/authManager';
+import { SkinManager } from './auth/skinManager';
 import { store } from './store/persistentStore';
 import { UpdateChecker } from './modpack/updateChecker';
 import { PackDownloader } from './modpack/packDownloader';
@@ -125,6 +126,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  store.unlockAccounts();
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.chaoslauncher.app');
   }
@@ -165,6 +167,8 @@ ipcMain.handle('window:close', () => {
 // ==========================================
 // IPC HANDLERS: AUTENTICACIÓN
 // ==========================================
+ipcMain.handle('app:getVersion', () => app.getVersion());
+
 ipcMain.handle('auth:getState', () => publicAuthState());
 
 ipcMain.handle('auth:loginOffline', async (_, username: string) => {
@@ -194,6 +198,23 @@ ipcMain.handle('auth:deleteAccount', (_, accountId: string) => {
   if (typeof accountId !== 'string') throw new Error('Cuenta inválida.');
   AuthManager.deleteAccount(accountId);
   return publicAuthState();
+});
+
+// Skins (premium: API de Mojang; offline: almacenamiento local)
+ipcMain.handle('skin:get', async () => {
+  const account = AuthManager.getActiveAccount();
+  if (!account) throw new Error('Inicia sesión para gestionar tu skin.');
+  return SkinManager.getSkin(account);
+});
+
+ipcMain.handle('skin:pick', async () => SkinManager.pickSkinFile(mainWindow));
+
+ipcMain.handle('skin:apply', async (_, dataUrl: string, variant: string) => {
+  const account = AuthManager.getActiveAccount();
+  if (!account) throw new Error('Inicia sesión para gestionar tu skin.');
+  if (typeof dataUrl !== 'string') throw new Error('Imagen de skin inválida.');
+  await SkinManager.applySkin(account, dataUrl, variant === 'slim' ? 'slim' : 'classic');
+  return SkinManager.getSkin(account);
 });
 
 // ==========================================

@@ -16,6 +16,12 @@ export const chaosAPI = {
     deleteAccount: (accountId: string) => ipcRenderer.invoke('auth:deleteAccount', accountId),
   },
 
+  skin: {
+    get: () => ipcRenderer.invoke('skin:get'),
+    pick: () => ipcRenderer.invoke('skin:pick'),
+    apply: (dataUrl: string, variant: 'classic' | 'slim') => ipcRenderer.invoke('skin:apply', dataUrl, variant),
+  },
+
   modpack: {
     getAll: () => ipcRenderer.invoke('modpack:getAll'),
     refreshList: () => ipcRenderer.invoke('modpack:refreshList'),
@@ -64,6 +70,7 @@ export const chaosAPI = {
   },
 
   updater: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion'),
     checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
     startDownload: () => ipcRenderer.invoke('updater:startDownload'),
     quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),

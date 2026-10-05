@@ -60,7 +60,6 @@ class PersistentStore {
 
     this.configPath = path.join(baseDir, 'config.json');
     this.config = this.loadConfig();
-    this.save();
   }
 
   private loadConfig(): LauncherConfig {
@@ -68,7 +67,8 @@ class PersistentStore {
       if (fs.existsSync(this.configPath)) {
         const data = fs.readFileSync(this.configPath, 'utf8');
         const parsed = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
-        parsed.accounts = this.decryptAccounts(parsed.accounts || []);
+        // Los tokens cifrados se descifran en unlockAccounts(), cuando safeStorage ya está disponible (app ready).
+        parsed.accounts = parsed.accounts || [];
 
         // 1. Asegurar URL del backend actualizada
         if (!parsed.modpackManifestUrl || parsed.modpackManifestUrl.includes('raw.githubusercontent.com')) {
@@ -136,26 +136,26 @@ class PersistentStore {
     return {
       ...this.config,
       accounts: this.config.accounts.map((acc) => {
-        const { accessToken, ...rest } = acc;
+        const { accessToken, ...rest } = acc as any;
         if (accessToken && canEncrypt) {
           return { ...rest, accessTokenEnc: safeStorage.encryptString(accessToken).toString('base64') } as UserAccount;
         }
+        // Sin cifrado disponible (antes de app ready) se conserva el token cifrado existente en vez de perderlo.
         return rest as UserAccount;
       }),
     };
   }
 
-  private decryptAccounts(accounts: UserAccount[]): UserAccount[] {
-    return accounts.map((acc: any) => {
+  /** Descifra los tokens guardados. Debe llamarse una vez que la app está lista (app.whenReady). */
+  public unlockAccounts(): void {
+    this.config.accounts = this.config.accounts.map((acc: any) => {
       const { accessTokenEnc, ...rest } = acc;
-      if (accessTokenEnc) {
-        try {
-          return { ...rest, accessToken: safeStorage.decryptString(Buffer.from(accessTokenEnc, 'base64')) };
-        } catch {
-          return rest;
-        }
+      if (!accessTokenEnc) return acc;
+      try {
+        return { ...rest, accessToken: safeStorage.decryptString(Buffer.from(accessTokenEnc, 'base64')) };
+      } catch {
+        return rest;
       }
-      return rest;
     });
   }
 

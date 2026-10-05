@@ -1,6 +1,6 @@
 {
   "name": "chaos-launcher",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "ChaosLauncher - Launcher moderno de Minecraft con soporte Premium/No-Premium y actualización obligatoria de modpacks",
   "author": "Chaos Studio",
   "main": "dist-electron/main/index.js",
@@ -29,6 +29,7 @@
     "msmc": "^5.0.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "skinview3d": "^3.4.2",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
