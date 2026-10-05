@@ -7,6 +7,7 @@ import { AuthManager } from '../auth/authManager';
 import { JavaDetector } from './javaDetector';
 import { UpdateChecker } from '../modpack/updateChecker';
 import { getModpackGameDir } from '../modpack/modpackPaths';
+import { ensureVanillaVersionJson } from './vanillaVersion';
 
 export class GameLauncher extends EventEmitter {
   private client: any;
@@ -222,6 +223,10 @@ export class GameLauncher extends EventEmitter {
       launchOptions.version.custom = `fabric-loader-${manifest.loader.version || '0.15.11'}-${manifest.minecraftVersion}`;
     }
 
+    // MCLC descarga el JSON de Minecraft con un throw dentro de un callback (cierra la app si falla la red):
+    // se asegura aquí, con reintentos, para que un fallo de red llegue como un error normal.
+    await ensureVanillaVersionJson(targetGameDir, manifest.minecraftVersion, config.gameDir);
+
     this.isRunning = true;
     this.emit('launch-start', {
       account: activeAccount.name,
@@ -240,6 +245,12 @@ export class GameLauncher extends EventEmitter {
       console.error('Error al lanzar Minecraft:', err);
       throw new Error(err.message || 'Error al iniciar el proceso de Minecraft.');
     }
+  }
+
+  /** Excepción no controlada durante el lanzamiento (p. ej. dentro de MCLC): se avisa en vez de cerrar la app. */
+  public reportFatalError(err: unknown): void {
+    this.isRunning = false;
+    this.emit('error', err);
   }
 
   public getIsRunning(): boolean {

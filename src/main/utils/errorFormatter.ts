@@ -68,7 +68,12 @@ export function formatFriendlyError(err: any): string {
     lower.includes('econnrefused') ||
     lower.includes('enotfound') ||
     lower.includes('getaddrinfo') ||
-    lower.includes('network error')
+    lower.includes('network error') ||
+    lower.includes('aggregateerror') ||
+    lower.includes('econnreset') ||
+    lower.includes('socket hang up') ||
+    lower.includes('eai_again') ||
+    lower.includes('epipe')
   ) {
     return 'No se pudo conectar con el servidor. Comprueba tu conexión a internet o verifica si el servidor está en mantenimiento.';
   }

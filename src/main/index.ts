@@ -19,6 +19,16 @@ import { BACKEND_URL } from './config/backend';
 
 let mainWindow: BrowserWindow | null = null;
 
+// Una excepción suelta en una librería (p. ej. minecraft-launcher-core ante un corte de red) no debe
+// mostrar el diálogo nativo de Electron ni cerrar el launcher: se registra y se avisa en la interfaz.
+process.on('uncaughtException', (err) => {
+  console.error('[Main] Excepción no controlada:', err);
+  gameLauncher.reportFatalError(err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Main] Promesa rechazada sin capturar:', reason);
+});
+
 function openExternalSafe(url: string): void {
   try {
     const parsed = new URL(url);
