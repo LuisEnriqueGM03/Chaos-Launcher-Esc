@@ -21,6 +21,7 @@ import {
   Clock,
   ExternalLink,
   Terminal,
+  Server,
   X
 } from 'lucide-react';
 import { renderSafeMarkdown } from '../utils/safeMarkdown';
@@ -675,23 +676,6 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                   <span>JUGAR</span>
                 </button>
               )}
-
-              {/* Entrar directo al servidor del modpack (la IP la define el backend) */}
-              {activeAccount && isInstalled && !isDownloading && !isGameRunning && serverIp && (
-                <label
-                  className="mt-3 flex items-center gap-2.5 cursor-pointer select-none text-xs sm:text-sm text-stone-200 font-minecraft minecraft-text-shadow-gray bg-black/45 px-3 py-1.5 border border-black/60"
-                  title={`Al jugar, Minecraft se conecta solo a ${serverIp}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={autoJoin}
-                    onChange={(e) => handleToggleAutoJoin(e.target.checked)}
-                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
-                  />
-                  <span>Entrar directo al servidor</span>
-                  <span className="text-amber-400 text-[11px] hidden sm:inline">{serverIp}</span>
-                </label>
-              )}
             </div>
           </div>
         )}
@@ -854,6 +838,44 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
 
         {/* RIGHT: Botón Actualizar Modpack + Avatar de la cuenta / Conectar cuenta */}
         <div className="flex items-center gap-2.5 my-auto">
+          {/* Entrar directo al servidor del modpack (la IP la define el backend) */}
+          {isInstalled && serverIp && (
+            <label
+              className={`group relative h-12 px-3 flex items-center gap-2 minecraft-btn-amber shrink-0 ${
+                isDownloading || isGameRunning
+                  ? 'opacity-40 cursor-not-allowed pointer-events-none'
+                  : 'cursor-pointer active:translate-y-0.5'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={autoJoin}
+                disabled={isDownloading || isGameRunning}
+                onChange={(e) => handleToggleAutoJoin(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                aria-label="Entrar directo al servidor"
+              />
+              <Server className="w-5 h-5 text-amber-300 filter drop-shadow-[1px_1px_0_#4a2a00]" />
+
+              {/* Tooltip */}
+              <div
+                role="tooltip"
+                className="pointer-events-none absolute bottom-full right-0 mb-3 w-64 p-3 minecraft-panel bg-[#150909] text-left opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
+              >
+                <div className="font-minecraft font-bold text-xs text-amber-300 minecraft-text-shadow-lava uppercase tracking-wide">
+                  Entrar directo al servidor
+                </div>
+                <p className="mt-1.5 text-[11px] leading-snug text-stone-200 font-sans normal-case">
+                  Al darle a Jugar, Minecraft se conecta solo a <span className="text-amber-400 font-semibold">{serverIp}</span> sin
+                  pasar por el menú principal.
+                </p>
+                <p className="mt-1.5 text-[10px] text-stone-400 font-sans normal-case">
+                  {autoJoin ? 'Activado' : 'Desactivado'} para este modpack. Se guarda en el launcher.
+                </p>
+              </div>
+            </label>
+          )}
+
           {/* Botón Minecraft de actualizar / recargar información del modpack */}
           <button
             type="button"
