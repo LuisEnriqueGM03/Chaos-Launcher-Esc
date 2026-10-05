@@ -1,6 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import path from 'path';
-import { resolveInside, isInside, assertSafeDownloadUrl } from './safePaths';
+import { resolveInside, isInside, assertSafeDownloadUrl, normalizeDownloadUrl } from './safePaths';
+
+describe('normalizeDownloadUrl', () => {
+  it('no vuelve a codificar un + ya codificado (causa del 403 en el CDN de CurseForge)', () => {
+    const url = 'https://edge.forgecdn.net/files/4944/647/alloy-forgery-2.1.2%2b1.20.jar';
+    expect(normalizeDownloadUrl(url)).toBe(url);
+    expect(normalizeDownloadUrl(url)).not.toContain('%252');
+  });
+
+  it('un + literal se queda como está', () => {
+    const url = 'https://edge.forgecdn.net/files/4944/647/alloy-forgery-2.1.2+1.20.jar';
+    expect(normalizeDownloadUrl(url)).toBe(url);
+  });
+
+  it('codifica lo que no estaba codificado (espacios y corchetes)', () => {
+    expect(normalizeDownloadUrl('https://x.test/a b.jar')).toBe('https://x.test/a%20b.jar');
+    expect(normalizeDownloadUrl('https://x.test/[fabric]ctov.jar')).toBe('https://x.test/%5Bfabric%5Dctov.jar');
+  });
+
+  it('conserva los escapes de GitHub raw y los símbolos permitidos', () => {
+    const url = 'https://raw.githubusercontent.com/o/r/main/resourcepacks/Refreshing%20Soundtracks!.zip';
+    expect(normalizeDownloadUrl(url)).toBe(url);
+  });
+
+  it('es idempotente', () => {
+    const once = normalizeDownloadUrl('https://x.test/a b+c[d]%23e.jar');
+    expect(normalizeDownloadUrl(once)).toBe(once);
+  });
+});
 
 const base = path.resolve('/tmp/game/modpack');
 

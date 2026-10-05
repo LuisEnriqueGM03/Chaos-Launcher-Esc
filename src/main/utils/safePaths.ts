@@ -23,6 +23,22 @@ export function isInside(baseDir: string, target: string): boolean {
   return resolved === base || resolved.startsWith(base + path.sep);
 }
 
+/**
+ * Normaliza la URL de descarga sin volver a codificar lo ya codificado.
+ * `encodeURI(decodeURI(url))` convertía %2B en %252B y el CDN de CurseForge respondía 403 a todos los mods
+ * con '+' en el nombre. Con `new URL` los escapes válidos se conservan y solo se codifica lo que no lo está.
+ */
+export function normalizeDownloadUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    // Los corchetes se codifican como hacía encodeURI (algunos nombres de mods llevan [fabric])
+    url.pathname = url.pathname.replace(/\[/g, '%5B').replace(/\]/g, '%5D');
+    return url.href;
+  } catch {
+    return encodeURI(raw);
+  }
+}
+
 /** Solo https (o http hacia localhost, para desarrollo local del backend). */
 export function assertSafeDownloadUrl(rawUrl: string): string {
   let url: URL;

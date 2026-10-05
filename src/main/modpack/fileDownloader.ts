@@ -6,7 +6,7 @@ import { pipeline } from 'stream/promises';
 import { ModpackManifest, ModpackFileEntry } from './modpackManifest';
 import { resolveFileDest } from './fileDest';
 import { calculateSha1Async } from './fileHash';
-import { assertSafeDownloadUrl } from '../utils/safePaths';
+import { assertSafeDownloadUrl, normalizeDownloadUrl } from '../utils/safePaths';
 import { BACKEND_URL } from '../config/backend';
 
 // Reutiliza conexiones TLS: evita un handshake por cada archivo pequeño.
@@ -142,11 +142,7 @@ export async function downloadManifestFile(ctx: DownloadContext, entry: ModpackF
   if (!fileUrl) {
     fileUrl = buildSafeUrl(rawBase, entry.path);
   } else {
-    try {
-      fileUrl = encodeURI(decodeURI(fileUrl));
-    } catch {
-      fileUrl = encodeURI(fileUrl);
-    }
+    fileUrl = normalizeDownloadUrl(fileUrl);
   }
 
   const tempPath = `${finalDestPath}.tmp_${Date.now()}`;
