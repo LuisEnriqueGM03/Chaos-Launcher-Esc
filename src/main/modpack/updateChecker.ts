@@ -100,11 +100,21 @@ export class UpdateChecker {
   }
 
   private static async processAndCacheModpack(m: ModpackItem): Promise<ModpackItem> {
-    // 1. Guardar imágenes en Data URIs persistentes (Icono, Wallpaper y Banner/titleImage)
+    // 1. Guardar imágenes en Data URIs persistentes (Icono, Wallpaper y Banner/titleImage).
+    // Si la URL de origen no cambió desde la última vez se reutiliza la copia guardada: el wallpaper pesa varios MB
+    // y descargarlo en cada comprobación era lo que hacía lenta la pantalla de cada modpack.
+    const prev = store.getCachedModpacks().find((c) => c.tag === m.tag);
+    const imageFor = (key: 'iconUrl' | 'wallpaperUrl' | 'titleImageUrl'): Promise<string | undefined> => {
+      const cached = prev?.[key];
+      if (cached && cached.startsWith('data:') && prev?._src?.[key] && prev._src[key] === m[key]) {
+        return Promise.resolve(cached);
+      }
+      return this.urlToDataUri(m[key]);
+    };
     const [iconData, wallpaperData, titleImageData] = await Promise.all([
-      this.urlToDataUri(m.iconUrl),
-      this.urlToDataUri(m.wallpaperUrl),
-      this.urlToDataUri(m.titleImageUrl),
+      imageFor('iconUrl'),
+      imageFor('wallpaperUrl'),
+      imageFor('titleImageUrl'),
     ]);
 
     // 2. Extraer changelog si viene en versions[0]
@@ -115,6 +125,7 @@ export class UpdateChecker {
 
     const processed: ModpackItem = {
       ...m,
+      _src: { iconUrl: m.iconUrl, wallpaperUrl: m.wallpaperUrl, titleImageUrl: m.titleImageUrl },
       iconUrl: iconData || this.resolveFullUrl(m.iconUrl),
       wallpaperUrl: wallpaperData || this.resolveFullUrl(m.wallpaperUrl),
       titleImageUrl: titleImageData || this.resolveFullUrl(m.titleImageUrl),
@@ -256,115 +267,184 @@ export class UpdateChecker {
     return this.normalizeModpackUrls(processedList);
   }
 
+  /** Resultado cuando no hay ningún modpack seleccionado (no existe carpeta que comprobar). */
+  private static noModpackResult(): UpdateCheckResult {
+    return {
+      isUpdateAvailable: false,
+      isMandatory: false,
+      currentVersion: null,
+      remoteVersion: '1.0.0',
+      manifest: this.getDefaultManifest(),
+    };
+  }
+
+  private static resolveTag(tag?: string): string {
+    return tag || store.getConfig().activeModpackTag || store.getCachedModpacks()[0]?.tag || '';
+  }
+
+  /** Estado en disco del modpack (versión instalada y mods en SU carpeta aislada). Sin red. */
+  private static getLocalState(tag: string) {
+    const targetModpackDir = getModpackGameDir(store.getConfig().gameDir, tag);
+    const modsDir = path.join(targetModpackDir, 'mods');
+    let hasLocalMods = false;
+    try {
+      hasLocalMods = fs.existsSync(modsDir) && fs.readdirSync(modsDir).length >= 1;
+    } catch {}
+    const installed = store.getInstalledModpackVersion(tag);
+    return { targetModpackDir, modsDir, hasLocalMods, currentVersion: hasLocalMods ? installed : null };
+  }
+
+  /**
+   * ¿Lo instalado coincide con el manifiesto? Compara la versión y, si coincide, revisa en disco que no falten
+   * mods requeridos, que no sobren mods eliminados del pack y que exista la carpeta config. Sin red.
+   */
+  private static isInstallUpToDate(
+    manifest: ModpackManifest,
+    tag: string,
+    local: { targetModpackDir: string; modsDir: string; hasLocalMods: boolean; currentVersion: string | null },
+  ): boolean {
+    const { targetModpackDir, modsDir, hasLocalMods, currentVersion } = local;
+    let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === manifest.version);
+
+    if (!(isUpToDate && manifest.files && Array.isArray(manifest.files) && manifest.files.length > 0 && fs.existsSync(modsDir))) {
+      return isUpToDate;
+    }
+
+    try {
+      // 0. ¿Falta la carpeta de configuraciones básica?
+      const configFolder = path.join(targetModpackDir, 'config');
+      const hasManifestConfigs = manifest.files.some((f) => f.path.startsWith('config/'));
+      if (hasManifestConfigs && (!fs.existsSync(configFolder) || fs.readdirSync(configFolder).length < 5)) {
+        console.log('[UpdateChecker] Discrepancia detectada: carpeta config incompleta o ausente.');
+        return false;
+      }
+
+      const localMods = new Set(fs.readdirSync(modsDir).map((f) => f.toLowerCase()));
+      const disabledMods = new Set(
+        store.getDisabledOptionalMods(manifest.optionalMods, tag).map((f) => f.toLowerCase())
+      );
+
+      const manifestModFiles = manifest.files.filter(
+        (f) =>
+          (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&
+          f.path.toLowerCase().endsWith('.jar') &&
+          !f.path.includes('.disabled')
+      );
+
+      // 1. ¿Falta algún mod requerido del manifiesto?
+      for (const m of manifestModFiles) {
+        const fileName = path.basename(m.path).toLowerCase();
+        const targetName = disabledMods.has(fileName) ? `${fileName}.disabled` : fileName;
+        if (!localMods.has(targetName)) {
+          console.log(`[UpdateChecker] Discrepancia detectada: falta el mod "${targetName}" localmente.`);
+          return false;
+        }
+      }
+
+      // 2. ¿Existe algún mod en la carpeta local que no pertenezca al modpack? (mod agregado o mod eliminado del pack)
+      const validModNames = new Set(
+        manifestModFiles.flatMap((m) => {
+          const base = path.basename(m.path).toLowerCase();
+          return [base, `${base}.disabled`];
+        })
+      );
+      for (const localFile of localMods) {
+        if ((localFile.endsWith('.jar') || localFile.endsWith('.jar.disabled')) && !validModNames.has(localFile)) {
+          console.log(`[UpdateChecker] Discrepancia detectada: mod local no reconocido o eliminado "${localFile}".`);
+          return false;
+        }
+      }
+    } catch (discErr: any) {
+      console.warn('[UpdateChecker] Error comprobando discrepancias físicas de mods:', discErr.message);
+    }
+    return isUpToDate;
+  }
+
+  private static buildResult(manifest: ModpackManifest, tag: string): UpdateCheckResult {
+    const local = this.getLocalState(tag);
+    const isUpToDate = this.isInstallUpToDate(manifest, tag, local);
+    const isUpdateAvailable = !local.hasLocalMods || !isUpToDate;
+    return {
+      isUpdateAvailable,
+      isMandatory: isUpdateAvailable && manifest.forceUpdate !== false,
+      currentVersion: local.currentVersion,
+      remoteVersion: manifest.version,
+      manifest,
+    };
+  }
+
+  /**
+   * Comprobación INSTANTÁNEA: compara lo instalado con el último manifiesto guardado, sin tocar la red.
+   * Permite mostrar "Jugar" al momento; la comprobación con el servidor (checkUpdate) la corrige después si hace falta.
+   */
+  public static checkUpdateCached(tag?: string): UpdateCheckResult {
+    const effectiveTag = this.resolveTag(tag);
+    if (!effectiveTag) return this.noModpackResult();
+
+    const manifest = store.getCachedManifest(effectiveTag) || this.getDefaultManifest(effectiveTag);
+    manifest.tag = effectiveTag;
+    return this.buildResult(manifest, effectiveTag);
+  }
+
   public static async checkUpdate(tag?: string): Promise<UpdateCheckResult> {
-    const config = store.getConfig();
-    const effectiveTag = tag || config.activeModpackTag || store.getCachedModpacks()[0]?.tag || '';
+    const effectiveTag = this.resolveTag(tag);
 
     // Sin modpack no hay carpeta que comprobar (nunca se usa una carpeta compartida por defecto)
-    if (!effectiveTag) {
-      return {
-        isUpdateAvailable: false,
-        isMandatory: false,
-        currentVersion: null,
-        remoteVersion: '1.0.0',
-        manifest: this.getDefaultManifest(),
-      };
-    }
-
-    // Comprobar físicamente si existen los mods o archivos del modpack en SU carpeta aislada
-    const targetModpackDir = getModpackGameDir(config.gameDir, effectiveTag);
-    const modsDir = path.join(targetModpackDir, 'mods');
-
-    const hasLocalMods =
-      fs.existsSync(modsDir) &&
-      (fs.readdirSync(modsDir).filter(
-        (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'),
-      ).length >= 1 || fs.readdirSync(modsDir).length >= 1);
-
-    let currentVersion = store.getInstalledModpackVersion(effectiveTag);
-    if (!hasLocalMods) {
-      currentVersion = null;
-    }
+    if (!effectiveTag) return this.noModpackResult();
 
     try {
       let manifest: ModpackManifest | null = null;
 
-      // 1. Intentar obtener el manifiesto directo desde el Backend si hay un tag
-      if (effectiveTag) {
-        try {
-          const backendRes = await this.getWithFallback<ModpackManifest>(
-            `/modpacks/${encodeURIComponent(effectiveTag)}/manifest`,
-            {
-              timeout: 6000,
-              headers: { 'Cache-Control': 'no-cache' },
-            }
-          );
-
-          const resData = backendRes?.data?.data || backendRes?.data;
-          if (resData && resData.version) {
-            manifest = resData;
-
-            // Refrescar primero la lista general de modpacks del backend para tener todos los metadatos frescos
-            try {
-              const modpacksRes = await this.getWithFallback('/modpacks', {
-                timeout: 4000,
-                headers: { 'Cache-Control': 'no-cache' },
-              });
-              const rawData = modpacksRes.data;
-              let rawList: ModpackItem[] = [];
-              if (Array.isArray(rawData)) rawList = rawData;
-              else if (rawData && Array.isArray(rawData.data)) rawList = rawData.data;
-
-              if (rawList.length > 0) {
-                const processedList = await Promise.all(rawList.map((m) => this.processAndCacheModpack(m)));
-                store.setCachedModpacks(processedList);
-              }
-            } catch {
-              // Fallback silencioso si no se pudo actualizar el catálogo completo
-            }
-
-            const cachedModpack = store.getCachedModpacks().find((m) => m.tag === effectiveTag);
-
-            // Convertir imágenes frescas del backend a Data URI para persistencia
-            const [iconData, wallpaperData, titleImageData] = await Promise.all([
-              this.urlToDataUri(manifest.iconUrl || cachedModpack?.iconUrl),
-              this.urlToDataUri(manifest.wallpaperUrl || cachedModpack?.wallpaperUrl),
-              this.urlToDataUri(manifest.titleImageUrl || cachedModpack?.titleImageUrl),
-            ]);
-
-            manifest.iconUrl = iconData || this.resolveFullUrl(manifest.iconUrl) || cachedModpack?.iconUrl;
-            manifest.wallpaperUrl = wallpaperData || this.resolveFullUrl(manifest.wallpaperUrl) || cachedModpack?.wallpaperUrl;
-            manifest.titleImageUrl = titleImageData || this.resolveFullUrl(manifest.titleImageUrl) || cachedModpack?.titleImageUrl;
-
-            manifest.titleDisplayMode = cachedModpack?.titleDisplayMode || manifest.titleDisplayMode;
-            manifest.titleText = cachedModpack?.titleText || manifest.titleText;
-            if (cachedModpack?.description !== undefined) manifest.description = cachedModpack.description;
-            if (cachedModpack?.hasOptionalMods !== undefined) manifest.hasOptionalMods = cachedModpack.hasOptionalMods;
-            if (cachedModpack?.hasRules !== undefined) {
-              manifest.hasRules = cachedModpack.hasRules;
-              manifest.rulesContent = cachedModpack.rulesContent;
-            }
-            if (cachedModpack?.hasDiscord !== undefined) {
-              manifest.hasDiscord = cachedModpack.hasDiscord;
-              manifest.discordUrl = cachedModpack.discordUrl;
-            }
-            if (cachedModpack?.hasChangelog !== undefined) manifest.hasChangelog = cachedModpack.hasChangelog;
-            if (cachedModpack?.changelog && cachedModpack.changelog.length > 0) {
-              manifest.changelog = cachedModpack.changelog;
-            }
-            if (manifest.optionalMods === undefined && cachedModpack?.optionalMods) {
-              manifest.optionalMods = cachedModpack.optionalMods;
-            }
-
-            store.setCachedManifest(effectiveTag, manifest);
+      // 1. Manifiesto del Backend
+      try {
+        const backendRes = await this.getWithFallback<ModpackManifest>(
+          `/modpacks/${encodeURIComponent(effectiveTag)}/manifest`,
+          {
+            timeout: 6000,
+            headers: { 'Cache-Control': 'no-cache' },
           }
-        } catch (backendErr: any) {
-          console.warn(`[UpdateChecker] Backend no disponible para manifiesto de "${effectiveTag}":`, backendErr.message);
+        );
+
+        const resData = backendRes?.data?.data || backendRes?.data;
+        if (resData && resData.version) {
+          manifest = resData;
+
+          // Metadatos (descripción, reglas, discord, imágenes) del catálogo guardado. El catálogo completo lo
+          // refresca getModpacks(); aquí no se vuelve a descargar toda la lista ni sus imágenes.
+          const cachedModpack = store.getCachedModpacks().find((m) => m.tag === effectiveTag);
+
+          manifest.iconUrl = this.resolveFullUrl(manifest.iconUrl) || cachedModpack?.iconUrl;
+          manifest.wallpaperUrl = this.resolveFullUrl(manifest.wallpaperUrl) || cachedModpack?.wallpaperUrl;
+          manifest.titleImageUrl = this.resolveFullUrl(manifest.titleImageUrl) || cachedModpack?.titleImageUrl;
+
+          manifest.titleDisplayMode = cachedModpack?.titleDisplayMode || manifest.titleDisplayMode;
+          manifest.titleText = cachedModpack?.titleText || manifest.titleText;
+          if (cachedModpack?.description !== undefined) manifest.description = cachedModpack.description;
+          if (cachedModpack?.hasOptionalMods !== undefined) manifest.hasOptionalMods = cachedModpack.hasOptionalMods;
+          if (cachedModpack?.hasRules !== undefined) {
+            manifest.hasRules = cachedModpack.hasRules;
+            manifest.rulesContent = cachedModpack.rulesContent;
+          }
+          if (cachedModpack?.hasDiscord !== undefined) {
+            manifest.hasDiscord = cachedModpack.hasDiscord;
+            manifest.discordUrl = cachedModpack.discordUrl;
+          }
+          if (cachedModpack?.hasChangelog !== undefined) manifest.hasChangelog = cachedModpack.hasChangelog;
+          if (cachedModpack?.changelog && cachedModpack.changelog.length > 0) {
+            manifest.changelog = cachedModpack.changelog;
+          }
+          if (manifest.optionalMods === undefined && cachedModpack?.optionalMods) {
+            manifest.optionalMods = cachedModpack.optionalMods;
+          }
+
+          store.setCachedManifest(effectiveTag, manifest);
         }
+      } catch (backendErr: any) {
+        console.warn(`[UpdateChecker] Backend no disponible para manifiesto de "${effectiveTag}":`, backendErr.message);
       }
 
       // 2. Si no se obtuvo del backend, recuperar de la caché persistente
-      if (!manifest && effectiveTag) {
+      if (!manifest) {
         manifest = store.getCachedManifest(effectiveTag);
       }
 
@@ -386,9 +466,7 @@ export class UpdateChecker {
             if (rawRes.data.changelog && Array.isArray(rawRes.data.changelog)) {
               manifest.changelog = rawRes.data.changelog;
             }
-            if (effectiveTag) {
-              store.setCachedManifest(effectiveTag, manifest);
-            }
+            store.setCachedManifest(effectiveTag, manifest);
           }
         } catch (rawErr: any) {
           console.log(`[UpdateChecker] No se pudo verificar versión remota directa de modpack.json: ${rawErr.message}`);
@@ -400,143 +478,16 @@ export class UpdateChecker {
         return {
           isUpdateAvailable: false,
           isMandatory: false,
-          currentVersion,
-          remoteVersion: currentVersion || '1.0.0',
+          currentVersion: this.getLocalState(effectiveTag).currentVersion,
+          remoteVersion: this.getLocalState(effectiveTag).currentVersion || '1.0.0',
           manifest: this.getDefaultManifest(effectiveTag),
         };
       }
 
-      const remoteVersion = manifest.version;
-      let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === remoteVersion);
-
-      // Verificación física de discrepancias en la carpeta local de mods y configs:
-      // Si la versión coincide en texto, pero faltan mods requeridos o sobran mods eliminados/no permitidos
-      if (isUpToDate && manifest.files && Array.isArray(manifest.files) && manifest.files.length > 0 && fs.existsSync(modsDir)) {
-        try {
-          // 0. ¿Falta la carpeta de configuraciones básica?
-          const configFolder = path.join(targetModpackDir, 'config');
-          const hasManifestConfigs = manifest.files.some((f) => f.path.startsWith('config/'));
-          if (hasManifestConfigs && (!fs.existsSync(configFolder) || fs.readdirSync(configFolder).length < 5)) {
-            console.log('[UpdateChecker] Discrepancia detectada: carpeta config incompleta o ausente.');
-            isUpToDate = false;
-          }
-
-          const localModsRaw = fs.readdirSync(modsDir);
-          const localMods = new Set(localModsRaw.map((f) => f.toLowerCase()));
-          const disabledMods = new Set(
-            store.getDisabledOptionalMods(manifest.optionalMods, effectiveTag).map((f) => f.toLowerCase())
-          );
-
-          const manifestModFiles = manifest.files.filter(
-            (f) =>
-              (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&
-              f.path.toLowerCase().endsWith('.jar') &&
-              !f.path.includes('.disabled')
-          );
-
-          // 1. ¿Falta algún mod requerido del manifiesto?
-          for (const m of manifestModFiles) {
-            const fileName = path.basename(m.path).toLowerCase();
-            const isDisabled = disabledMods.has(fileName);
-            const targetName = isDisabled ? `${fileName}.disabled` : fileName;
-            if (!localMods.has(targetName)) {
-              console.log(`[UpdateChecker] Discrepancia detectada: falta el mod "${targetName}" localmente.`);
-              isUpToDate = false;
-              break;
-            }
-          }
-
-          // 2. ¿Existe algún mod en la carpeta local que no pertenezca al modpack? (mod agregado o mod eliminado del pack)
-          if (isUpToDate) {
-            const validModNames = new Set(
-              manifestModFiles.flatMap((m) => {
-                const base = path.basename(m.path).toLowerCase();
-                return [base, `${base}.disabled`];
-              })
-            );
-
-            for (const localFile of localMods) {
-              if (localFile.endsWith('.jar') || localFile.endsWith('.jar.disabled')) {
-                if (!validModNames.has(localFile)) {
-                  console.log(`[UpdateChecker] Discrepancia detectada: mod local no reconocido o eliminado "${localFile}".`);
-                  isUpToDate = false;
-                  break;
-                }
-              }
-            }
-          }
-        } catch (discErr: any) {
-          console.warn('[UpdateChecker] Error comprobando discrepancias físicas de mods:', discErr.message);
-        }
-      }
-
-      const isUpdateAvailable = !hasLocalMods || !isUpToDate;
-      const isMandatory = isUpdateAvailable && manifest.forceUpdate !== false;
-
-      return {
-        isUpdateAvailable,
-        isMandatory,
-        currentVersion,
-        remoteVersion,
-        manifest,
-      };
+      return this.buildResult(manifest, effectiveTag);
     } catch (err: any) {
       console.warn('Error al comprobar actualización:', err.message);
-      const cachedManifest = (effectiveTag ? store.getCachedManifest(effectiveTag) : null) || this.getDefaultManifest(effectiveTag);
-      cachedManifest.tag = effectiveTag;
-      let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === cachedManifest.version);
-
-      if (isUpToDate && cachedManifest.files && Array.isArray(cachedManifest.files) && cachedManifest.files.length > 0 && fs.existsSync(modsDir)) {
-        try {
-          const configFolder = path.join(targetModpackDir, 'config');
-          const hasManifestConfigs = cachedManifest.files.some((f) => f.path.startsWith('config/'));
-          if (hasManifestConfigs && (!fs.existsSync(configFolder) || fs.readdirSync(configFolder).length < 5)) {
-            isUpToDate = false;
-          }
-
-          const localMods = new Set(fs.readdirSync(modsDir).map((f) => f.toLowerCase()));
-          const disabledMods = new Set(store.getDisabledOptionalMods(cachedManifest.optionalMods, effectiveTag).map((f) => f.toLowerCase()));
-          const manifestModFiles = cachedManifest.files.filter(
-            (f) =>
-              (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&
-              f.path.toLowerCase().endsWith('.jar') &&
-              !f.path.includes('.disabled')
-          );
-          for (const m of manifestModFiles) {
-            const fileName = path.basename(m.path).toLowerCase();
-            const isDisabled = disabledMods.has(fileName);
-            const targetName = isDisabled ? `${fileName}.disabled` : fileName;
-            if (!localMods.has(targetName)) {
-              isUpToDate = false;
-              break;
-            }
-          }
-          if (isUpToDate) {
-            const validModNames = new Set(manifestModFiles.flatMap((m) => {
-              const base = path.basename(m.path).toLowerCase();
-              return [base, `${base}.disabled`];
-            }));
-            for (const localFile of localMods) {
-              if (localFile.endsWith('.jar') || localFile.endsWith('.jar.disabled')) {
-                if (!validModNames.has(localFile)) {
-                  isUpToDate = false;
-                  break;
-                }
-              }
-            }
-          }
-        } catch {}
-      }
-
-      const isUpdateAvailable = !hasLocalMods || !isUpToDate;
-
-      return {
-        isUpdateAvailable,
-        isMandatory: isUpdateAvailable && cachedManifest.forceUpdate !== false,
-        currentVersion,
-        remoteVersion: cachedManifest.version,
-        manifest: cachedManifest,
-      };
+      return this.checkUpdateCached(effectiveTag);
     }
   }
 

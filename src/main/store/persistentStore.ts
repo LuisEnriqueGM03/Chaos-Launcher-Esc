@@ -188,7 +188,23 @@ class PersistentStore {
     });
   }
 
+  private saveTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Programa el guardado. config.json pesa varios MB (catálogo e imágenes en caché) y una sola comprobación de
+   * modpack lo guardaba varias veces seguidas: se agrupan en una escritura. flush() la fuerza (al cerrar la app).
+   */
   public save(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => this.flush(), 300);
+    this.saveTimer.unref?.();
+  }
+
+  public flush(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.serializeForDisk(), null, 2), 'utf8');
     } catch (err) {

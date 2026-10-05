@@ -149,6 +149,10 @@ app.whenReady().then(() => {
   });
 });
 
+// Guardado diferido del config: se fuerza la escritura al salir para no perder cambios
+app.on('before-quit', () => store.flush());
+process.on('exit', () => store.flush());
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -258,6 +262,12 @@ ipcMain.handle('modpack:checkUpdate', async (_, tag?: string) => {
   return await UpdateChecker.checkUpdate(tag);
 });
 
+// Comprobación instantánea con lo guardado en disco (sin red): permite mostrar "Jugar" al momento
+ipcMain.handle('modpack:checkUpdateCached', (_, tag?: string) => {
+  assertTag(tag);
+  return UpdateChecker.checkUpdateCached(tag);
+});
+
 ipcMain.handle('modpack:downloadUpdate', async (_, tag?: string) => {
   assertTag(tag);
   const modpackTag = tag || store.getConfig().activeModpackTag;
@@ -290,7 +300,11 @@ ipcMain.handle('modpack:cancelDownload', async () => {
 
 ipcMain.handle('modpack:getOptionalMods', async (_, tag?: string) => {
   assertTag(tag);
-  const updateResult = await UpdateChecker.checkUpdate(tag);
+  // Los mods opcionales salen del manifiesto guardado (se refresca en cada comprobación): sin esperar a la red
+  const cachedManifest = tag ? store.getCachedManifest(tag) : null;
+  const updateResult = cachedManifest
+    ? { manifest: cachedManifest }
+    : await UpdateChecker.checkUpdate(tag);
   const manifest = updateResult.manifest || UpdateChecker.getDefaultManifest(tag);
   const cachedModpack = store.getCachedModpacks().find((m) => m.tag === tag);
   const optionalMods = manifest?.optionalMods !== undefined
@@ -339,20 +353,41 @@ gameLauncher.on('progress', (e) => {
 
 gameLauncher.on('log', (line) => {
   mainWindow?.webContents.send('launcher:log', line);
+  // Minecraft escribe esto al crear su ventana (LWJGL/OpenGL listos)
+  if (!gameWindowSeen && closeAfterLaunchTimer && /Backend library|LWJGL version/.test(String(line))) {
+    gameWindowSeen = true;
+    clearCloseTimer();
+    closeAfterLaunchTimer = setTimeout(closeLauncherForGame, 2500);
+  }
 });
 
 gameLauncher.on('game-closed', (code) => {
+  clearCloseTimer();
   mainWindow?.webContents.send('launcher:closed', code);
 });
 
+// El launcher se cierra cuando el juego ya abrió su ventana (o tras un margen), no nada más lanzar el proceso:
+// así, si Java muere al arrancar, el jugador ve el error en vez de que el launcher desaparezca sin más.
+let closeAfterLaunchTimer: NodeJS.Timeout | null = null;
+let gameWindowSeen = false;
+const clearCloseTimer = () => {
+  if (closeAfterLaunchTimer) clearTimeout(closeAfterLaunchTimer);
+  closeAfterLaunchTimer = null;
+};
+const closeLauncherForGame = () => {
+  clearCloseTimer();
+  mainWindow?.close();
+};
+
 gameLauncher.on('game-started', () => {
   mainWindow?.webContents.send('launcher:started');
-  setTimeout(() => {
-    mainWindow?.close();
-  }, 1200);
+  gameWindowSeen = false;
+  clearCloseTimer();
+  closeAfterLaunchTimer = setTimeout(closeLauncherForGame, 60000);
 });
 
 gameLauncher.on('error', (err) => {
+  clearCloseTimer();
   mainWindow?.webContents.send('launcher:error', formatFriendlyError(err));
 });
 

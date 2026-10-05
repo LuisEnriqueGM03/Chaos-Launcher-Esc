@@ -8,10 +8,13 @@ import { JavaDetector } from './javaDetector';
 import { UpdateChecker } from '../modpack/updateChecker';
 import { getModpackGameDir } from '../modpack/modpackPaths';
 import { ensureVanillaVersionJson } from './vanillaVersion';
+import { ensureFabricProfile } from './fabricProfile';
 
 export class GameLauncher extends EventEmitter {
   private client: any;
   private isRunning: boolean = false;
+  /** Últimas líneas de diagnóstico de MCLC: explican por qué no arrancó cuando launch() devuelve null. */
+  private debugTail: string[] = [];
 
   constructor() {
     super();
@@ -26,6 +29,13 @@ export class GameLauncher extends EventEmitter {
 
     this.client.on('download-status', (e: any) => {
       this.emit('download-status', e);
+    });
+
+    // MCLC no lanza errores: ante un fallo escribe aquí "Failed to start due to ..." y devuelve null
+    this.client.on('debug', (e: any) => {
+      const line = String(e);
+      this.debugTail = [...this.debugTail.slice(-39), line];
+      this.emit('log', line + '\n');
     });
 
     this.client.on('data', (e: any) => {
@@ -220,7 +230,12 @@ export class GameLauncher extends EventEmitter {
 
       launchOptions.customArgs = customArgs;
     } else if (manifest.loader && manifest.loader.type === 'fabric') {
-      launchOptions.version.custom = `fabric-loader-${manifest.loader.version || '0.15.11'}-${manifest.minecraftVersion}`;
+      // El perfil de Fabric no viene en el modpack: se instala aquí (sin él MCLC falla en silencio)
+      launchOptions.version.custom = await ensureFabricProfile(
+        targetGameDir,
+        manifest.minecraftVersion,
+        manifest.loader.version || '0.15.11',
+      );
     }
 
     // MCLC descarga el JSON de Minecraft con un throw dentro de un callback (cierra la app si falla la red):
@@ -234,9 +249,23 @@ export class GameLauncher extends EventEmitter {
       modpack: manifest.name,
     });
 
+    this.debugTail = [];
     try {
       const mcProcess = await this.client.launch(launchOptions);
-      if (mcProcess && typeof mcProcess.unref === 'function') {
+      // MCLC devuelve null (sin lanzar nada) cuando algo falla al preparar el juego
+      if (!mcProcess) {
+        const reason = [...this.debugTail].reverse().find((l) => /Failed to start|Couldn't start/.test(l));
+        throw new Error(
+          reason
+            ? reason.replace(/^\[MCLC\]:\s*/, '').replace(/, closing\.\.\.$/, '')
+            : 'Minecraft no pudo iniciarse. Revisa la consola del launcher.',
+        );
+      }
+      mcProcess.on('error', (spawnErr: Error) => {
+        this.isRunning = false;
+        this.emit('error', spawnErr);
+      });
+      if (typeof mcProcess.unref === 'function') {
         mcProcess.unref();
       }
       this.emit('game-started');

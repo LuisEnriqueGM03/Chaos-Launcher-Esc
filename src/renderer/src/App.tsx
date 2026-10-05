@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
   Flame, 
@@ -224,25 +224,42 @@ export const App: React.FC = () => {
     window.chaosAPI.updater?.quitAndInstall?.();
   };
 
+  // Número de la última comprobación: una respuesta lenta de otro modpack no debe pisar la del actual
+  const checkSeq = useRef(0);
+
   const checkModpackUpdates = async (tag?: string) => {
     try {
       if (!window.chaosAPI) return;
       const targetTag = tag || selectedModpackTag || undefined;
-      const res = await window.chaosAPI.modpack.checkUpdate(targetTag);
-      setUpdateResult(res);
+      const seq = ++checkSeq.current;
 
-      // Si el backend se encendió o se actualizaron metadatos, refrescar también la lista en pantalla
+      // 1. Estado local al instante (sin red): el botón muestra Jugar/Descargar de inmediato
       try {
-        const freshList = await window.chaosAPI.modpack.getAll();
-        if (Array.isArray(freshList)) {
-          setModpacks(freshList);
-        }
+        const local = await window.chaosAPI.modpack.checkUpdateCached(targetTag);
+        if (seq === checkSeq.current) setUpdateResult(local);
+        const localCfg = await window.chaosAPI.config.get();
+        if (seq === checkSeq.current) setConfig(localCfg);
       } catch (e) {
-        // Fallback si no hay conexión
+        // Sin caché: se espera a la comprobación con el servidor
       }
 
+      // 2. Comprobación con el servidor: corrige el estado si hay una versión nueva
+      const res = await window.chaosAPI.modpack.checkUpdate(targetTag);
+      if (seq !== checkSeq.current) return;
+      setUpdateResult(res);
+
       const freshCfg = await window.chaosAPI.config.get();
-      setConfig(freshCfg);
+      if (seq === checkSeq.current) setConfig(freshCfg);
+
+      // Refrescar la lista (metadatos, imágenes) sin bloquear el botón
+      window.chaosAPI.modpack
+        .getAll()
+        .then((freshList) => {
+          if (Array.isArray(freshList)) setModpacks(freshList);
+        })
+        .catch(() => {
+          // Sin conexión: se mantiene la lista guardada
+        });
     } catch (err) {
       console.error('Error al verificar modpack:', err);
     }

@@ -162,7 +162,8 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   // Solo cuenta la versión instalada de ESTE modpack (nunca un valor global compartido)
   const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || null;
   const isInstalled = Boolean(installedVersion);
-  const isUpToDate = isInstalled && isUpdateAvailable === false;
+  // Solo se muestra "Actualizar" cuando hay una actualización confirmada: mientras se comprueba no se asume una
+  const isUpToDate = isInstalled && isUpdateAvailable !== true;
 
   // Comprobar estado del servidor periódicamente
   useEffect(() => {

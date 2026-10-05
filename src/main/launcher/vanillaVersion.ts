@@ -1,30 +1,11 @@
-import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { getJsonWithRetry } from './httpJson';
 
 const MANIFEST_URLS = [
   'https://piston-meta.mojang.com/mc/game/version_manifest.json',
   'https://launchermeta.mojang.com/mc/game/version_manifest.json',
 ];
-const ATTEMPTS = 3;
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function getJsonWithRetry(urls: string[]): Promise<any> {
-  let lastErr: any = null;
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-    for (const url of urls) {
-      try {
-        const res = await axios.get(url, { timeout: 15000, headers: { 'Cache-Control': 'no-cache' } });
-        if (res.data && typeof res.data === 'object') return res.data;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    if (attempt < ATTEMPTS) await sleep(1000 * attempt);
-  }
-  throw lastErr || new Error('Respuesta vacía de Mojang.');
-}
 
 /**
  * Garantiza que `<root>/versions/<mc>/<mc>.json` exista antes de lanzar.

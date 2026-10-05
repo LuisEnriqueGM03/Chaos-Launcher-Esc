@@ -179,6 +179,7 @@ export interface ChaosAPI {
     getAll: () => Promise<ModpackItem[]>;
     refreshList: () => Promise<ModpackItem[]>;
     checkUpdate: (tag?: string) => Promise<UpdateCheckResult>;
+    checkUpdateCached: (tag?: string) => Promise<UpdateCheckResult>;
     downloadUpdate: (tag?: string) => Promise<{ success: boolean; installedVersion: string }>;
     cancelDownload: () => Promise<{ success: boolean; cancelled: boolean }>;
     getOptionalMods: (tag?: string) => Promise<{ optionalMods: OptionalMod[]; disabled: string[] }>;

@@ -27,6 +27,7 @@ export const chaosAPI = {
     getAll: () => ipcRenderer.invoke('modpack:getAll'),
     refreshList: () => ipcRenderer.invoke('modpack:refreshList'),
     checkUpdate: (tag?: string) => ipcRenderer.invoke('modpack:checkUpdate', tag),
+    checkUpdateCached: (tag?: string) => ipcRenderer.invoke('modpack:checkUpdateCached', tag),
     downloadUpdate: (tag?: string) => ipcRenderer.invoke('modpack:downloadUpdate', tag),
     cancelDownload: () => ipcRenderer.invoke('modpack:cancelDownload'),
     getOptionalMods: (tag?: string) => ipcRenderer.invoke('modpack:getOptionalMods', tag),

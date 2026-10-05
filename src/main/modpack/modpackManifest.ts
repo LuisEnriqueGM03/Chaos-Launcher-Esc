@@ -26,6 +26,8 @@ export interface ModpackServerInfo {
 
 export interface ModpackItem {
   id?: string;
+  /** URLs de origen de las imágenes ya convertidas a data URI (para no volver a descargarlas si no cambian). */
+  _src?: { iconUrl?: string; wallpaperUrl?: string; titleImageUrl?: string };
   name: string;
   tag: string;
   description?: string;
