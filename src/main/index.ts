@@ -115,10 +115,9 @@ function createWindow() {
   });
 
   // Inicializar el actualizador automático ligado a GitHub Releases
+  // La comprobación la dispara el renderer (updater:checkForUpdates) una vez suscrito a los eventos,
+  // para que ninguna respuesta se pierda antes de mostrar la interfaz.
   AppUpdater.init(mainWindow);
-  mainWindow.webContents.once('did-finish-load', () => {
-    AppUpdater.checkForUpdates();
-  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

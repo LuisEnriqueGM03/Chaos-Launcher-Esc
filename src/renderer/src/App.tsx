@@ -42,6 +42,8 @@ export const App: React.FC = () => {
   // Estados de auto-actualización de Chaos Launcher
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [isAppUpdateModalOpen, setIsAppUpdateModalOpen] = useState(false);
+  // Pantalla de arranque: se revisa si hay una versión nueva del launcher antes de mostrar la interfaz
+  const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(true);
   const [appUpdateProgress, setAppUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const [isAppUpdating, setIsAppUpdating] = useState(false);
   const [isAppUpdateDownloaded, setIsAppUpdateDownloaded] = useState(false);
@@ -84,7 +86,10 @@ export const App: React.FC = () => {
     if (!window.chaosAPI) return;
 
     // Comprobar actualización del Launcher inmediatamente al arrancar
-    window.chaosAPI.updater?.checkForUpdates?.().catch(console.error);
+    window.chaosAPI.updater?.checkForUpdates?.().catch((e: unknown) => {
+      console.error(e);
+      setIsCheckingAppUpdate(false);
+    });
 
     // 1. Cargar sesión de usuario
     window.chaosAPI.auth.getState().then((state) => {
@@ -160,11 +165,16 @@ export const App: React.FC = () => {
 
     // 6. Suscribirse a eventos de auto-actualización del Launcher
     const unsubAppUpdate = window.chaosAPI.updater?.onUpdateAvailable?.((info) => {
+      setIsCheckingAppUpdate(false);
       console.log('[App] Nueva versión de Chaos Launcher detectada:', info);
       setAppUpdateInfo(info);
       setAppUpdateError(null);
       setIsAppUpdateModalOpen(true);
     });
+
+    const unsubAppNone = window.chaosAPI.updater?.onUpdateNotAvailable?.(() => setIsCheckingAppUpdate(false));
+    // Si no hay respuesta (sin conexión, GitHub lento) no se deja al usuario esperando
+    const checkTimeout = setTimeout(() => setIsCheckingAppUpdate(false), 8000);
 
     const unsubAppProg = window.chaosAPI.updater?.onDownloadProgress?.((prog) => {
       setAppUpdateProgress(prog);
@@ -180,6 +190,7 @@ export const App: React.FC = () => {
 
     const unsubAppErr = window.chaosAPI.updater?.onError?.((err) => {
       console.warn('[App] Error en actualizador del Launcher:', err);
+      setIsCheckingAppUpdate(false);
       setIsAppUpdating(false);
       setAppUpdateError(formatFriendlyError(err));
     });
@@ -190,7 +201,9 @@ export const App: React.FC = () => {
       unsubLaunchLog();
       unsubLaunchClosed();
       unsubLaunchErr();
+      clearTimeout(checkTimeout);
       if (unsubAppUpdate) unsubAppUpdate();
+      if (unsubAppNone) unsubAppNone();
       if (unsubAppProg) unsubAppProg();
       if (unsubAppDownloaded) unsubAppDownloaded();
       if (unsubAppErr) unsubAppErr();
@@ -396,6 +409,17 @@ export const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#080505] text-slate-100 overflow-hidden relative select-none">
+      {/* Pantalla de arranque mientras se busca una versión nueva del launcher */}
+      {isCheckingAppUpdate && (
+        <div className="absolute inset-x-0 bottom-0 top-9 z-[90] bg-[#080505] flex flex-col items-center justify-center gap-4">
+          <img src={logoTransparent} alt="Chaos Launcher" className="w-20 h-20 object-contain" style={{ imageRendering: 'pixelated' }} />
+          <div className="flex items-center gap-2 text-xs font-minecraft text-stone-300">
+            <span className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <span>BUSCANDO ACTUALIZACIONES...</span>
+          </div>
+        </div>
+      )}
+
       {/* 1. TitleBar Frameless */}
       <TitleBar
         onMinimize={() => window.chaosAPI?.window.minimize()}

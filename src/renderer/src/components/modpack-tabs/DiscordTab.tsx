@@ -10,10 +10,10 @@ interface DiscordTabProps {
 
 export const DiscordTab: React.FC<DiscordTabProps> = ({ modpackName, modpack, discordUrl }) => {
   return (
-    <div className="relative z-10 w-full max-w-2xl max-h-[82%] overflow-y-auto minecraft-panel rounded-none p-6 sm:p-7 animate-in fade-in duration-200 text-center space-y-6">
-      <div className="flex items-center justify-between pb-4 border-b-2 border-black text-left">
+    <div className="relative z-10 w-full max-w-xl minecraft-panel rounded-none p-4 animate-in fade-in duration-200 text-center space-y-3">
+      <div className="flex items-center justify-between pb-2.5 border-b-2 border-black text-left">
         <div>
-          <h3 className="font-minecraft font-bold text-lg text-white tracking-wide minecraft-text-shadow">
+          <h3 className="font-minecraft font-bold text-base text-white tracking-wide minecraft-text-shadow">
             COMUNIDAD DE DISCORD
           </h3>
           <p className="text-xs text-[#828bf7] font-minecraft mt-0.5">
@@ -22,13 +22,13 @@ export const DiscordTab: React.FC<DiscordTabProps> = ({ modpackName, modpack, di
         </div>
       </div>
 
-      <div className="p-8 minecraft-card border-[#5865F2]/50 bg-[#0f111c] space-y-6 max-w-lg mx-auto">
-        <div className="w-16 h-16 rounded-none minecraft-slot text-[#828bf7] mx-auto flex items-center justify-center bg-black/60 border-[#5865F2]">
-          <DiscordPixelIcon className="w-10 h-10" />
+      <div className="p-4 minecraft-card border-[#5865F2]/50 bg-[#0f111c] space-y-3 max-w-md mx-auto">
+        <div className="w-12 h-12 rounded-none minecraft-slot text-[#828bf7] mx-auto flex items-center justify-center bg-black/60 border-[#5865F2]">
+          <DiscordPixelIcon className="w-7 h-7" />
         </div>
 
-        <div className="space-y-1.5">
-          <h4 className="font-minecraft text-xl font-bold text-white minecraft-text-shadow">
+        <div className="space-y-1">
+          <h4 className="font-minecraft text-base font-bold text-white minecraft-text-shadow">
             {modpackName.toUpperCase()}
           </h4>
           <p className="text-xs text-stone-300 font-sans">
@@ -37,7 +37,7 @@ export const DiscordTab: React.FC<DiscordTabProps> = ({ modpackName, modpack, di
         </div>
 
         {/* Botón Azul Minecraft 3D con ícono pixelado */}
-        <div className="pt-2 flex justify-center">
+        <div className="flex justify-center">
           <button
             onClick={() => {
               if (discordUrl) {
@@ -46,18 +46,13 @@ export const DiscordTab: React.FC<DiscordTabProps> = ({ modpackName, modpack, di
                 alert('No se ha configurado la URL de Discord para este modpack.');
               }
             }}
-            className="minecraft-btn-discord px-8 py-4 font-minecraft font-bold text-sm tracking-wider flex items-center justify-center gap-3 cursor-pointer shadow-xl hover:scale-105 transition"
+            className="minecraft-btn-discord px-6 py-2.5 font-minecraft font-bold text-xs tracking-wider flex items-center justify-center gap-3 cursor-pointer shadow-xl hover:scale-105 transition"
           >
-            <DiscordPixelIcon className="w-6 h-6" />
+            <DiscordPixelIcon className="w-5 h-5" />
             <span>UNIRSE A DISCORD</span>
           </button>
         </div>
 
-        {discordUrl && (
-          <span className="text-[10px] font-mono text-stone-400 block pt-1 truncate">
-            {discordUrl}
-          </span>
-        )}
       </div>
     </div>
   );
