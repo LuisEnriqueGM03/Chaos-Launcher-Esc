@@ -319,7 +319,7 @@ export const App: React.FC = () => {
 
   const handleLaunchGame = async () => {
     // Si no está instalado o hay actualización pendiente, descargar directamente sin modal
-    if (!config?.installedModpackVersion || (updateResult?.isUpdateAvailable && updateResult?.isMandatory)) {
+    if (!installedVersion || (updateResult?.isUpdateAvailable && updateResult?.isMandatory)) {
       handleStartUpdate();
       return;
     }
@@ -333,7 +333,7 @@ export const App: React.FC = () => {
     setIsGameRunning(true);
 
     try {
-      await window.chaosAPI.launcher.launch();
+      await window.chaosAPI.launcher.launch(selectedModpackTag || undefined);
     } catch (err: any) {
       setIsGameRunning(false);
       setLaunchError(formatFriendlyError(err));
@@ -404,6 +404,8 @@ export const App: React.FC = () => {
   };
 
   const activeModpack = modpacks.find((m) => m.tag === selectedModpackTag) || modpacks[0] || null;
+  // Versión instalada del modpack seleccionado (cada modpack tiene la suya)
+  const installedVersion = (selectedModpackTag && config?.installedModpackVersions?.[selectedModpackTag]) || null;
   const manifest = updateResult?.manifest;
   const isUpdateRequired = !!(updateResult?.isUpdateAvailable && updateResult?.isMandatory);
 
@@ -591,7 +593,7 @@ export const App: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
                     <div className="minecraft-card bg-black/40 p-2.5">
                       <span className="text-stone-400">Versión Instalada:</span>{' '}
-                      <strong className="text-white">v{config?.installedModpackVersion || 'Sin instalar'}</strong>
+                      <strong className="text-white">v{installedVersion || 'Sin instalar'}</strong>
                     </div>
                     <div className="minecraft-card bg-black/40 p-2.5">
                       <span className="text-stone-400">Versión en Servidor:</span>{' '}
@@ -650,7 +652,7 @@ export const App: React.FC = () => {
       <MandatoryUpdateModal
         isOpen={isUpdateModalOpen}
         manifest={manifest || null}
-        currentVersion={config?.installedModpackVersion || null}
+        currentVersion={installedVersion}
         progress={downloadProgress}
         isDownloading={isDownloading}
         onStartUpdate={handleStartUpdate}

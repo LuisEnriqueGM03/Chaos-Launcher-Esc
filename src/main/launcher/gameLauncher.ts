@@ -46,13 +46,19 @@ export class GameLauncher extends EventEmitter {
     });
   }
 
-  public async launch(): Promise<void> {
+  /** Lanza el modpack `tag` (el que el usuario tiene seleccionado), dentro de su propia carpeta. */
+  public async launch(tag?: string): Promise<void> {
     if (this.isRunning) {
       throw new Error('El juego ya se encuentra en ejecución.');
     }
 
+    const modpackTag = tag || store.getConfig().activeModpackTag;
+    if (!modpackTag) {
+      throw new Error('No hay ningún modpack seleccionado.');
+    }
+
     // 1. Verificación obligatoria de actualización de modpack
-    const updateCheck = await UpdateChecker.checkUpdate();
+    const updateCheck = await UpdateChecker.checkUpdate(modpackTag);
     if (updateCheck.isMandatory && updateCheck.isUpdateAvailable) {
       throw new Error(
         `¡Actualización obligatoria detectada (v${updateCheck.remoteVersion})! Debes actualizar el modpack antes de poder iniciar el juego.`
@@ -75,7 +81,8 @@ export class GameLauncher extends EventEmitter {
     }
 
     const config = store.getConfig();
-    const manifest = updateCheck.manifest || UpdateChecker.getDefaultManifest();
+    const manifest = updateCheck.manifest || UpdateChecker.getDefaultManifest(modpackTag);
+    manifest.tag = modpackTag;
 
     // 3. Preparar credenciales de MCLC
     const authPayload = {

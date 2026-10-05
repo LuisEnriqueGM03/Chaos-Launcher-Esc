@@ -1,6 +1,6 @@
 {
   "name": "chaos-launcher",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "ChaosLauncher - Launcher moderno de Minecraft con soporte Premium/No-Premium y actualización obligatoria de modpacks",
   "author": "Chaos Studio",
   "main": "dist-electron/main/index.js",

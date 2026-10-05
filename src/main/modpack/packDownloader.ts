@@ -12,6 +12,9 @@ export class PackDownloader {
     manifest: ModpackManifest,
     onProgress: (progress: DownloadProgress) => void
   ): Promise<void> {
+    if (!manifest.tag) {
+      throw new Error('El modpack no tiene tag: no se puede determinar su carpeta de instalación.');
+    }
     const config = store.getConfig();
     const targetGameDir = getModpackGameDir(config.gameDir, manifest);
 
@@ -125,13 +128,7 @@ export class PackDownloader {
         fs.unlinkSync(tempZipPath);
       }
 
-      if (manifest.tag) {
-        store.setInstalledModpackVersion(manifest.tag, manifest.version);
-      } else {
-        store.setConfig({
-          installedModpackVersion: manifest.version,
-        });
-      }
+      store.setInstalledModpackVersion(manifest.tag, manifest.version);
 
       onProgress({
         stage: 'completed',

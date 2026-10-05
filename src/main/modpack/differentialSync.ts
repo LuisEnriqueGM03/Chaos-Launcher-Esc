@@ -85,12 +85,18 @@ export class DifferentialSync {
     manifest: ModpackManifest,
     onProgress: (progress: DownloadProgress) => void
   ): Promise<void> {
+    if (!manifest.tag) {
+      throw new Error('El modpack no tiene tag: no se puede determinar su carpeta de instalación.');
+    }
+    // El estado de la sincronización es estático: dos descargas a la vez se pisarían entre sí
+    if (this.activeAbortController) {
+      throw new Error('Ya hay una descarga de modpack en curso. Espera a que termine o cancélala.');
+    }
+
     this.activeAbortController = new AbortController();
     this.downloadedInSession = [];
     const config = store.getConfig();
-    this.initialVersionBeforeSync = manifest.tag
-      ? store.getInstalledModpackVersion(manifest.tag)
-      : config.installedModpackVersion;
+    this.initialVersionBeforeSync = store.getInstalledModpackVersion(manifest.tag);
     const signal = this.activeAbortController.signal;
 
     const targetGameDir = getModpackGameDir(config.gameDir, manifest);
@@ -100,32 +106,8 @@ export class DifferentialSync {
       fs.mkdirSync(targetGameDir, { recursive: true });
     }
 
-    // Auto-migración desde legacy gameDir/mods a targetGameDir/mods si aplica
-    const legacyModsDir = path.join(config.gameDir, 'mods');
+    // Los mods de un modpack viven SOLO en su carpeta: nunca se copian mods de otra carpeta (ni de otro pack)
     const targetModsDir = path.join(targetGameDir, 'mods');
-    if (
-      fs.existsSync(legacyModsDir) &&
-      (!fs.existsSync(targetModsDir) || fs.readdirSync(targetModsDir).filter((f) => f.endsWith('.jar')).length === 0)
-    ) {
-      try {
-        const legacyJars = fs
-          .readdirSync(legacyModsDir)
-          .filter((f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'));
-        if (legacyJars.length > 0) {
-          console.log(`[DifferentialSync] Migrando ${legacyJars.length} mods previos a ${targetModsDir}...`);
-          if (!fs.existsSync(targetModsDir)) fs.mkdirSync(targetModsDir, { recursive: true });
-          for (const jar of legacyJars) {
-            const src = path.join(legacyModsDir, jar);
-            const dst = path.join(targetModsDir, jar);
-            if (!fs.existsSync(dst)) {
-              fs.copyFileSync(src, dst);
-            }
-          }
-        }
-      } catch (migErr) {
-        console.warn('[DifferentialSync] Advertencia en auto-migración de mods legacy:', migErr);
-      }
-    }
 
     await resolveRemoteManifest(manifest, onProgress);
 
@@ -151,7 +133,7 @@ export class DifferentialSync {
       }
     }
 
-    const disabledMods = new Set(store.getDisabledOptionalMods(manifest.optionalMods));
+    const disabledMods = new Set(store.getDisabledOptionalMods(manifest.optionalMods, manifest.tag));
     const queue: ModpackFileEntry[] = [];
     const validModPaths = new Set<string>();
 
@@ -309,11 +291,7 @@ export class DifferentialSync {
 
     // 2. Si no hay nada que descargar
     if (queue.length === 0) {
-      if (manifest.tag) {
-        store.setInstalledModpackVersion(manifest.tag, manifest.version);
-      } else {
-        store.setConfig({ installedModpackVersion: manifest.version });
-      }
+      store.setInstalledModpackVersion(manifest.tag, manifest.version);
       onProgress({
         stage: 'completed',
         percent: 100,
@@ -432,11 +410,7 @@ export class DifferentialSync {
         console.warn('[DifferentialSync] Advertencia guardando manifest instalado:', e);
       }
 
-      if (manifest.tag) {
-        store.setInstalledModpackVersion(manifest.tag, manifest.version);
-      } else {
-        store.setConfig({ installedModpackVersion: manifest.version });
-      }
+      store.setInstalledModpackVersion(manifest.tag, manifest.version);
 
       onProgress({
         stage: 'completed',

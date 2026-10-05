@@ -159,7 +159,8 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   const iconUrl = modpack?.iconUrl || manifest?.iconUrl;
 
   const targetTag = modpack?.tag || manifest?.tag;
-  const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || config?.installedModpackVersion;
+  // Solo cuenta la versión instalada de ESTE modpack (nunca un valor global compartido)
+  const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || null;
   const isInstalled = Boolean(installedVersion);
   const isUpToDate = isInstalled && isUpdateAvailable === false;
 
@@ -251,7 +252,7 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
     const willEnable = isCurrentlyDisabled;
 
     try {
-      const res = await window.chaosAPI?.modpack?.toggleOptionalMod(mod.file, willEnable);
+      const res = await window.chaosAPI?.modpack?.toggleOptionalMod(mod.file, willEnable, modpack?.tag);
       if (res) {
         setDisabledMods(res.currentDisabled);
         setStatusMsg(

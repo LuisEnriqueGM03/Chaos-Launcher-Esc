@@ -7,6 +7,12 @@ import { BACKEND_URL, isLegacyLocalBackend } from '../config/backend';
 import { ModpackItem, ModpackManifest } from '../modpack/modpackManifest';
 import { getModpackGameDir, getModpackModsDir } from '../modpack/modpackPaths';
 
+export interface ModpackOptionalState {
+  disabled: string[];
+  preferences: Record<string, boolean>;
+  defaults: Record<string, boolean>;
+}
+
 export interface LauncherConfig {
   accounts: UserAccount[];
   activeAccountId: string | null;
@@ -14,11 +20,18 @@ export interface LauncherConfig {
   javaPath: string;
   gameDir: string;
   modpackManifestUrl: string;
+  /** @deprecated Solo para migrar configs antiguas; la versión instalada vive en installedModpackVersions[tag]. */
   installedModpackVersion: string | null;
+  /** Versión instalada de cada modpack, indexada por tag. */
   installedModpackVersions?: Record<string, string>;
+  /** Estado de mods opcionales de cada modpack, indexado por tag (cada pack es independiente). */
+  optionalModsByTag?: Record<string, ModpackOptionalState>;
+  /** @deprecated Globales antiguos (mezclaban packs); se migran a optionalModsByTag. */
   disabledOptionalMods?: string[];
   activeModpackTag?: string | null;
+  /** @deprecated Ver optionalModsByTag. */
   optionalModsPreferences?: Record<string, boolean>;
+  /** @deprecated Ver optionalModsByTag. */
   optionalModsDefaults?: Record<string, boolean>;
   cachedModpacks?: ModpackItem[];
   cachedManifests?: Record<string, ModpackManifest>;
@@ -40,6 +53,7 @@ const DEFAULT_CONFIG: LauncherConfig = {
   modpackManifestUrl: `${BACKEND_BASE}/modpacks`,
   installedModpackVersion: null,
   installedModpackVersions: {},
+  optionalModsByTag: {},
   disabledOptionalMods: [],
   cachedModpacks: [],
   cachedManifests: {},
@@ -81,43 +95,49 @@ class PersistentStore {
           parsed.modpackManifestUrl = DEFAULT_CONFIG.modpackManifestUrl;
         }
 
-        // 2. Comprobar físicamente si los mods están instalados en la subcarpeta del modpack o en gameDir
+        // 2. Migrar los valores globales antiguos al modpack que estaba activo (antes mezclaban packs)
+        const activeTag: string | null = parsed.activeModpackTag || null;
+        const versions: Record<string, string> = { ...(parsed.installedModpackVersions || {}) };
+        const byTag: Record<string, ModpackOptionalState> = { ...(parsed.optionalModsByTag || {}) };
+        if (activeTag) {
+          if (parsed.installedModpackVersion && !versions[activeTag]) {
+            versions[activeTag] = parsed.installedModpackVersion;
+          }
+          const legacyDisabled: string[] = parsed.disabledOptionalMods || [];
+          const legacyPrefs = parsed.optionalModsPreferences || {};
+          const legacyDefaults = parsed.optionalModsDefaults || {};
+          if (
+            !byTag[activeTag] &&
+            (legacyDisabled.length > 0 || Object.keys(legacyPrefs).length > 0 || Object.keys(legacyDefaults).length > 0)
+          ) {
+            byTag[activeTag] = { disabled: [...legacyDisabled], preferences: { ...legacyPrefs }, defaults: { ...legacyDefaults } };
+          }
+        }
+        parsed.installedModpackVersion = null;
+        parsed.disabledOptionalMods = [];
+        parsed.optionalModsPreferences = {};
+        parsed.optionalModsDefaults = {};
+
+        // 3. Cada modpack se valida contra SU PROPIA carpeta: si ya no tiene mods en disco, deja de figurar como instalado
         const hasModsInDirectory = (dir: string) => {
           try {
             return (
               fs.existsSync(dir) &&
-              fs.readdirSync(dir).filter(
-                (f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled')
-              ).length >= 1
+              fs.readdirSync(dir).some((f) => f.toLowerCase().endsWith('.jar') || f.toLowerCase().endsWith('.jar.disabled'))
             );
           } catch {
             return false;
           }
         };
-
-        const activeTag = parsed.activeModpackTag || 'mimic-server';
-        const tagModsDir = getModpackModsDir(parsed.gameDir, activeTag);
-        const legacyModsDir = path.join(parsed.gameDir, 'mods');
-
-        let hasMods = hasModsInDirectory(tagModsDir) || hasModsInDirectory(legacyModsDir);
-        if (!hasMods && fs.existsSync(parsed.gameDir)) {
+        for (const tag of Object.keys(versions)) {
+          let installed = false;
           try {
-            const subdirs = fs.readdirSync(parsed.gameDir, { withFileTypes: true });
-            for (const sub of subdirs) {
-              if (sub.isDirectory() && sub.name !== 'versions' && sub.name !== 'libraries' && sub.name !== 'assets') {
-                if (hasModsInDirectory(path.join(parsed.gameDir, sub.name, 'mods'))) {
-                  hasMods = true;
-                  break;
-                }
-              }
-            }
+            installed = hasModsInDirectory(getModpackModsDir(parsed.gameDir, tag));
           } catch {}
+          if (!installed) delete versions[tag];
         }
-
-        if (!hasMods) {
-          parsed.installedModpackVersion = null;
-          parsed.installedModpackVersions = {};
-        }
+        parsed.installedModpackVersions = versions;
+        parsed.optionalModsByTag = byTag;
 
         // Si hay una cuenta Premium de Microsoft, eliminar duplicados offline del mismo nombre
         const msNames = new Set(
@@ -186,21 +206,17 @@ class PersistentStore {
     return this.getConfig();
   }
 
-  public getInstalledModpackVersion(tag?: string): string | null {
+  /** Versión instalada del modpack `tag` (o del activo). Sin valor por defecto compartido entre packs. */
+  public getInstalledModpackVersion(tag?: string | null): string | null {
     const targetTag = tag || this.config.activeModpackTag;
-    if (targetTag && this.config.installedModpackVersions?.[targetTag]) {
-      return this.config.installedModpackVersions[targetTag];
-    }
-    return this.config.installedModpackVersion || null;
+    if (!targetTag) return null;
+    return this.config.installedModpackVersions?.[targetTag] || null;
   }
 
+  /** Registra la versión instalada de UN modpack. No cambia cuál es el modpack activo. */
   public setInstalledModpackVersion(tag: string, version: string): void {
-    const versions = { ...(this.config.installedModpackVersions || {}) };
-    versions[tag] = version;
     this.setConfig({
-      installedModpackVersions: versions,
-      installedModpackVersion: version,
-      activeModpackTag: tag,
+      installedModpackVersions: { ...(this.config.installedModpackVersions || {}), [tag]: version },
     });
   }
 
@@ -245,37 +261,42 @@ class PersistentStore {
     this.save();
   }
 
-  public getDisabledOptionalMods(optionalMods?: { file: string; defaultEnabled?: boolean }[]): string[] {
-    const prefs = this.config.optionalModsPreferences || {};
-    const defaults = this.config.optionalModsDefaults || {};
-    const disabledList = new Set<string>(this.config.disabledOptionalMods || []);
+  private getOptionalState(tag: string): ModpackOptionalState {
+    if (!this.config.optionalModsByTag) this.config.optionalModsByTag = {};
+    if (!this.config.optionalModsByTag[tag]) {
+      this.config.optionalModsByTag[tag] = { disabled: [], preferences: {}, defaults: {} };
+    }
+    return this.config.optionalModsByTag[tag];
+  }
+
+  /**
+   * Mods opcionales desactivados de UN modpack. Preferencias y archivos se resuelven siempre contra la
+   * carpeta de ese tag, así que cambiar de modpack nunca toca las preferencias del otro.
+   */
+  public getDisabledOptionalMods(
+    optionalMods: { file: string; defaultEnabled?: boolean }[] | undefined,
+    tag?: string | null
+  ): string[] {
+    const targetTag = tag || this.config.activeModpackTag;
+    if (!targetTag) return [];
+    const state = this.getOptionalState(targetTag);
+    const prefs = state.preferences;
+    const defaults = state.defaults;
+    const disabledList = new Set<string>(state.disabled);
 
     if (optionalMods && Array.isArray(optionalMods)) {
-      const targetModsDir = getModpackModsDir(this.config.gameDir, this.config.activeModpackTag);
-      const legacyModsDir = path.join(this.config.gameDir, 'mods');
-      const modsDir =
-        fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
-          ? targetModsDir
-          : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
-          ? legacyModsDir
-          : targetModsDir;
+      const modsDir = getModpackModsDir(this.config.gameDir, targetTag);
 
       // Limpiar de disabledList, prefs y defaults archivos que ya no existan en la lista de mods opcionales
       const validFiles = new Set(optionalMods.map((m) => m.file));
       for (const f of Array.from(disabledList)) {
-        if (!validFiles.has(f)) {
-          disabledList.delete(f);
-        }
+        if (!validFiles.has(f)) disabledList.delete(f);
       }
       for (const f of Object.keys(prefs)) {
-        if (!validFiles.has(f)) {
-          delete prefs[f];
-        }
+        if (!validFiles.has(f)) delete prefs[f];
       }
       for (const f of Object.keys(defaults)) {
-        if (!validFiles.has(f)) {
-          delete defaults[f];
-        }
+        if (!validFiles.has(f)) delete defaults[f];
       }
 
       for (const mod of optionalMods) {
@@ -290,13 +311,7 @@ class PersistentStore {
           delete prefs[mod.file]; // Limpiar preferencia obsoleta para que el valor de fábrica del backend mande
         }
 
-        // Determinar si debe estar activado o desactivado
-        let isEnabled: boolean;
-        if (prefs[mod.file] !== undefined) {
-          isEnabled = prefs[mod.file] === true;
-        } else {
-          isEnabled = serverDefault;
-        }
+        const isEnabled = prefs[mod.file] !== undefined ? prefs[mod.file] === true : serverDefault;
 
         if (isEnabled) {
           disabledList.delete(mod.file);
@@ -320,34 +335,27 @@ class PersistentStore {
           }
         }
       }
-
-      this.config.optionalModsDefaults = defaults;
-      this.config.optionalModsPreferences = prefs;
     }
 
-    this.config.disabledOptionalMods = Array.from(disabledList);
+    state.disabled = Array.from(disabledList);
     this.save();
-    return this.config.disabledOptionalMods;
+    return state.disabled;
   }
 
-  public toggleOptionalMod(modFileName: string, enabled: boolean): { success: boolean; currentDisabled: string[] } {
-    const targetModsDir = getModpackModsDir(this.config.gameDir, this.config.activeModpackTag);
-    const legacyModsDir = path.join(this.config.gameDir, 'mods');
-    const modsDir =
-      fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
-        ? targetModsDir
-        : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
-        ? legacyModsDir
-        : targetModsDir;
+  public toggleOptionalMod(
+    modFileName: string,
+    enabled: boolean,
+    tag?: string | null
+  ): { success: boolean; currentDisabled: string[] } {
+    const targetTag = tag || this.config.activeModpackTag;
+    if (!targetTag) throw new Error('No hay un modpack seleccionado.');
+    const modsDir = getModpackModsDir(this.config.gameDir, targetTag);
     const normalPath = path.join(modsDir, modFileName);
     const disabledPath = path.join(modsDir, `${modFileName}.disabled`);
 
-    if (!this.config.optionalModsPreferences) {
-      this.config.optionalModsPreferences = {};
-    }
-    this.config.optionalModsPreferences[modFileName] = enabled;
-
-    const disabledList = new Set(this.config.disabledOptionalMods || []);
+    const state = this.getOptionalState(targetTag);
+    state.preferences[modFileName] = enabled;
+    const disabledList = new Set(state.disabled);
 
     try {
       if (enabled) {
@@ -367,53 +375,40 @@ class PersistentStore {
       console.error('Error al alternar mod opcional en disco:', err);
     }
 
-    this.config.disabledOptionalMods = Array.from(disabledList);
+    state.disabled = Array.from(disabledList);
     this.save();
-    return { success: true, currentDisabled: this.config.disabledOptionalMods };
+    return { success: true, currentDisabled: state.disabled };
   }
 
+  /** Borra SOLO el modpack `tag`: su carpeta, su versión, sus preferencias y su caché. El resto no se toca. */
   public deleteModpackFromCache(tag?: string): boolean {
     try {
       const targetTag = tag || this.config.activeModpackTag;
+      if (!targetTag) return false;
 
-      // 1. Borrar carpeta aislada del modpack y sus mods/configs
-      if (targetTag) {
-        const targetModpackDir = getModpackGameDir(this.config.gameDir, targetTag);
-        if (fs.existsSync(targetModpackDir)) {
-          try {
-            fs.rmSync(targetModpackDir, { recursive: true, force: true });
-          } catch (e) {
-            console.warn('[PersistentStore] Error borrando carpeta de modpack:', e);
-          }
+      // 1. Borrar la carpeta aislada del modpack y sus mods/configs
+      const targetModpackDir = getModpackGameDir(this.config.gameDir, targetTag);
+      if (fs.existsSync(targetModpackDir)) {
+        try {
+          fs.rmSync(targetModpackDir, { recursive: true, force: true });
+        } catch (e) {
+          console.warn('[PersistentStore] Error borrando carpeta de modpack:', e);
         }
       }
 
-      // 2. Limpiar legacy modsDir si quedó huérfana
-      const legacyModsDir = path.join(this.config.gameDir, 'mods');
-      if (fs.existsSync(legacyModsDir)) {
-        try { fs.rmSync(legacyModsDir, { recursive: true, force: true }); } catch {}
-      }
+      // 2. Olvidar el estado de ESTE modpack (versión y mods opcionales)
+      const versions = { ...(this.config.installedModpackVersions || {}) };
+      delete versions[targetTag];
+      this.config.installedModpackVersions = versions;
+      if (this.config.optionalModsByTag) delete this.config.optionalModsByTag[targetTag];
 
-      // 3. Resetear versión instalada y mods opcionales
-      if (targetTag && this.config.installedModpackVersions) {
-        delete this.config.installedModpackVersions[targetTag];
-      }
-      this.config.installedModpackVersion = null;
-      this.config.disabledOptionalMods = [];
-      this.config.optionalModsPreferences = {};
-      this.config.optionalModsDefaults = {};
-
-      // 4. Eliminar de la lista de modpacks en memoria
-      if (targetTag && this.config.cachedModpacks) {
+      // 3. Quitarlo de la lista y de los manifiestos en memoria
+      if (this.config.cachedModpacks) {
         this.config.cachedModpacks = this.config.cachedModpacks.filter((m) => m.tag !== targetTag);
       }
+      if (this.config.cachedManifests) delete this.config.cachedManifests[targetTag];
 
-      // 5. Eliminar manifest de la memoria
-      if (targetTag && this.config.cachedManifests) {
-        delete this.config.cachedManifests[targetTag];
-      }
-
-      // 6. Si el tag activo era este, cambiarlo o vaciarlo
+      // 4. Si era el modpack activo, pasar a otro o vaciarlo
       if (this.config.activeModpackTag === targetTag) {
         this.config.activeModpackTag = this.config.cachedModpacks?.[0]?.tag || null;
       }
@@ -436,6 +431,13 @@ class PersistentStore {
 
   public setCachedModpacks(modpacks: ModpackItem[]): void {
     this.config.cachedModpacks = modpacks;
+    // Los manifiestos de modpacks que ya no existen en el backend se descartan (pesan MB y no se usarían)
+    if (this.config.cachedManifests) {
+      const validTags = new Set(modpacks.map((m) => m.tag));
+      for (const tag of Object.keys(this.config.cachedManifests)) {
+        if (!validTags.has(tag)) delete this.config.cachedManifests[tag];
+      }
+    }
     this.save();
   }
 

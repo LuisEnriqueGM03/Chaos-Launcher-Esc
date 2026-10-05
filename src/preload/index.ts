@@ -30,8 +30,8 @@ export const chaosAPI = {
     downloadUpdate: (tag?: string) => ipcRenderer.invoke('modpack:downloadUpdate', tag),
     cancelDownload: () => ipcRenderer.invoke('modpack:cancelDownload'),
     getOptionalMods: (tag?: string) => ipcRenderer.invoke('modpack:getOptionalMods', tag),
-    toggleOptionalMod: (modFileName: string, enabled: boolean) =>
-      ipcRenderer.invoke('modpack:toggleOptionalMod', modFileName, enabled),
+    toggleOptionalMod: (modFileName: string, enabled: boolean, tag?: string) =>
+      ipcRenderer.invoke('modpack:toggleOptionalMod', modFileName, enabled, tag),
     deleteModpack: (tag?: string) => ipcRenderer.invoke('modpack:deleteModpack', tag),
     onProgress: (callback: (progress: any) => void) => {
       const listener = (_: any, data: any) => callback(data);
@@ -41,7 +41,7 @@ export const chaosAPI = {
   },
 
   launcher: {
-    launch: () => ipcRenderer.invoke('launcher:launch'),
+    launch: (tag?: string) => ipcRenderer.invoke('launcher:launch', tag),
     isRunning: () => ipcRenderer.invoke('launcher:isRunning'),
     onProgress: (callback: (progress: any) => void) => {
       const listener = (_: any, data: any) => callback(data);

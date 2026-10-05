@@ -260,17 +260,20 @@ export class UpdateChecker {
     const config = store.getConfig();
     const effectiveTag = tag || config.activeModpackTag || store.getCachedModpacks()[0]?.tag || '';
 
-    // Comprobar físicamente si existen los mods o archivos del modpack en la carpeta aislada del modpack
-    const targetModpackDir = getModpackGameDir(config.gameDir, effectiveTag);
-    const targetModsDir = path.join(targetModpackDir, 'mods');
-    const legacyModsDir = path.join(config.gameDir, 'mods');
+    // Sin modpack no hay carpeta que comprobar (nunca se usa una carpeta compartida por defecto)
+    if (!effectiveTag) {
+      return {
+        isUpdateAvailable: false,
+        isMandatory: false,
+        currentVersion: null,
+        remoteVersion: '1.0.0',
+        manifest: this.getDefaultManifest(),
+      };
+    }
 
-    const modsDir =
-      fs.existsSync(targetModsDir) && fs.readdirSync(targetModsDir).length > 0
-        ? targetModsDir
-        : fs.existsSync(legacyModsDir) && fs.readdirSync(legacyModsDir).length > 0
-        ? legacyModsDir
-        : targetModsDir;
+    // Comprobar físicamente si existen los mods o archivos del modpack en SU carpeta aislada
+    const targetModpackDir = getModpackGameDir(config.gameDir, effectiveTag);
+    const modsDir = path.join(targetModpackDir, 'mods');
 
     const hasLocalMods =
       fs.existsSync(modsDir) &&
@@ -365,6 +368,9 @@ export class UpdateChecker {
         manifest = store.getCachedManifest(effectiveTag);
       }
 
+      // El identificador del modpack es el tag pedido: así la carpeta y las versiones nunca se cruzan
+      if (manifest) manifest.tag = effectiveTag;
+
       // 2.5 Si el manifest apunta a un modpack.json remoto (p.ej. GitHub raw), resolver la versión autoritativa fresca
       if (manifest && manifest.downloadUrl && (manifest.downloadUrl.endsWith('.json') || manifest.downloadUrl.includes('modpack.json'))) {
         try {
@@ -418,7 +424,7 @@ export class UpdateChecker {
           const localModsRaw = fs.readdirSync(modsDir);
           const localMods = new Set(localModsRaw.map((f) => f.toLowerCase()));
           const disabledMods = new Set(
-            store.getDisabledOptionalMods(manifest.optionalMods).map((f) => f.toLowerCase())
+            store.getDisabledOptionalMods(manifest.optionalMods, effectiveTag).map((f) => f.toLowerCase())
           );
 
           const manifestModFiles = manifest.files.filter(
@@ -477,6 +483,7 @@ export class UpdateChecker {
     } catch (err: any) {
       console.warn('Error al comprobar actualización:', err.message);
       const cachedManifest = (effectiveTag ? store.getCachedManifest(effectiveTag) : null) || this.getDefaultManifest(effectiveTag);
+      cachedManifest.tag = effectiveTag;
       let isUpToDate = Boolean(hasLocalMods && currentVersion && currentVersion === cachedManifest.version);
 
       if (isUpToDate && cachedManifest.files && Array.isArray(cachedManifest.files) && cachedManifest.files.length > 0 && fs.existsSync(modsDir)) {
@@ -488,7 +495,7 @@ export class UpdateChecker {
           }
 
           const localMods = new Set(fs.readdirSync(modsDir).map((f) => f.toLowerCase()));
-          const disabledMods = new Set(store.getDisabledOptionalMods(cachedManifest.optionalMods).map((f) => f.toLowerCase()));
+          const disabledMods = new Set(store.getDisabledOptionalMods(cachedManifest.optionalMods, effectiveTag).map((f) => f.toLowerCase()));
           const manifestModFiles = cachedManifest.files.filter(
             (f) =>
               (f.path.startsWith('mods/') || f.path.startsWith('mods\\')) &&

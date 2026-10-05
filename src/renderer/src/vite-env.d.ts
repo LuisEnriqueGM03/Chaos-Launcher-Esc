@@ -182,12 +182,12 @@ export interface ChaosAPI {
     downloadUpdate: (tag?: string) => Promise<{ success: boolean; installedVersion: string }>;
     cancelDownload: () => Promise<{ success: boolean; cancelled: boolean }>;
     getOptionalMods: (tag?: string) => Promise<{ optionalMods: OptionalMod[]; disabled: string[] }>;
-    toggleOptionalMod: (modFileName: string, enabled: boolean) => Promise<{ success: boolean; currentDisabled: string[] }>;
+    toggleOptionalMod: (modFileName: string, enabled: boolean, tag?: string) => Promise<{ success: boolean; currentDisabled: string[] }>;
     deleteModpack: (tag?: string) => Promise<boolean>;
     onProgress: (callback: (progress: DownloadProgress) => void) => () => void;
   };
   launcher: {
-    launch: () => Promise<void>;
+    launch: (tag?: string) => Promise<void>;
     isRunning: () => Promise<boolean>;
     onProgress: (callback: (progress: any) => void) => () => void;
     onLog: (callback: (logLine: string) => void) => () => void;

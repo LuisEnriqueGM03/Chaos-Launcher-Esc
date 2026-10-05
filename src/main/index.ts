@@ -250,9 +250,12 @@ ipcMain.handle('modpack:checkUpdate', async (_, tag?: string) => {
 
 ipcMain.handle('modpack:downloadUpdate', async (_, tag?: string) => {
   assertTag(tag);
+  const modpackTag = tag || store.getConfig().activeModpackTag;
+  if (!modpackTag) throw new Error('No hay ningún modpack seleccionado.');
   try {
-    const updateResult = await UpdateChecker.checkUpdate(tag);
-    const manifest = updateResult.manifest || UpdateChecker.getDefaultManifest(tag);
+    const updateResult = await UpdateChecker.checkUpdate(modpackTag);
+    const manifest = updateResult.manifest || UpdateChecker.getDefaultManifest(modpackTag);
+    manifest.tag = modpackTag;
 
     await DifferentialSync.sync(manifest, (progress) => {
       try {
@@ -286,15 +289,16 @@ ipcMain.handle('modpack:getOptionalMods', async (_, tag?: string) => {
 
   return {
     optionalMods,
-    disabled: store.getDisabledOptionalMods(optionalMods),
+    disabled: store.getDisabledOptionalMods(optionalMods, updateResult.manifest?.tag || tag),
   };
 });
 
-ipcMain.handle('modpack:toggleOptionalMod', (_, modFileName: string, enabled: boolean) => {
+ipcMain.handle('modpack:toggleOptionalMod', (_, modFileName: string, enabled: boolean, tag?: string) => {
   if (typeof modFileName !== 'string' || /[\\/]|\.\./.test(modFileName) || typeof enabled !== 'boolean') {
     throw new Error('Mod inválido.');
   }
-  return store.toggleOptionalMod(modFileName, enabled);
+  assertTag(tag);
+  return store.toggleOptionalMod(modFileName, enabled, tag);
 });
 
 ipcMain.handle('modpack:deleteModpack', async (_, tag?: string) => {
@@ -305,9 +309,10 @@ ipcMain.handle('modpack:deleteModpack', async (_, tag?: string) => {
 // ==========================================
 // IPC HANDLERS: LANZADOR DE MINECRAFT
 // ==========================================
-ipcMain.handle('launcher:launch', async () => {
+ipcMain.handle('launcher:launch', async (_, tag?: string) => {
+  assertTag(tag);
   try {
-    return await gameLauncher.launch();
+    return await gameLauncher.launch(tag);
   } catch (err: any) {
     throw new Error(formatFriendlyError(err));
   }
