@@ -5,7 +5,7 @@ import { ModpackManifest, ModpackItem, UpdateCheckResult } from './modpackManife
 import { store } from '../store/persistentStore';
 import { getModpackGameDir } from './modpackPaths';
 
-const BACKEND_URL = process.env.CHAOS_BACKEND_URL || 'http://localhost:3000/api/v1';
+import { BACKEND_URL } from '../config/backend';
 
 export class UpdateChecker {
   private static getCandidateUrls(endpoint: string): string[] {

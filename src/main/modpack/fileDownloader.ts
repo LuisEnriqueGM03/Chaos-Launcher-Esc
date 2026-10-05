@@ -7,6 +7,7 @@ import { ModpackManifest, ModpackFileEntry } from './modpackManifest';
 import { resolveFileDest } from './fileDest';
 import { calculateSha1Async } from './fileHash';
 import { assertSafeDownloadUrl } from '../utils/safePaths';
+import { BACKEND_URL } from '../config/backend';
 
 // Reutiliza conexiones TLS: evita un handshake por cada archivo pequeño.
 const keepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 32 });
@@ -55,7 +56,7 @@ export async function downloadManifestFile(ctx: DownloadContext, entry: ModpackF
   const repoClean = (manifest.githubRepo || '').replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
   const rawBase = repoClean
     ? `https://raw.githubusercontent.com/${repoClean}/main`
-    : (manifest.downloadUrl ? manifest.downloadUrl.replace(/\/[^/]+$/, '') : 'http://localhost:3000/api/v1/uploads');
+    : (manifest.downloadUrl ? manifest.downloadUrl.replace(/\/[^/]+$/, '') : `${BACKEND_URL}/uploads`);
 
   // Caso A: Archivo dividido en chunks / partes transparentes
   if (entry.parts && entry.parts.length > 0) {

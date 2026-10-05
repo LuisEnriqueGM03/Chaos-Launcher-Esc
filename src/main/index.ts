@@ -15,6 +15,7 @@ import { AppUpdater } from './updater/appUpdater';
 import { UninstallerService } from './system/uninstaller';
 import { formatFriendlyError } from './utils/errorFormatter';
 import { isInside } from './utils/safePaths';
+import { BACKEND_URL } from './config/backend';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -411,7 +412,7 @@ ipcMain.handle('system:getServerStatus', async (_, host: string) => {
   if (typeof host !== 'string' || !/^[A-Za-z0-9]([A-Za-z0-9.:-]{0,251}[A-Za-z0-9])?$/.test(host)) {
     return { online: false, players: 0, max: 20 };
   }
-  const backendBase = process.env.CHAOS_BACKEND_URL || 'http://localhost:3000/api/v1';
+  const backendBase = BACKEND_URL;
   const urls: string[] = [];
   if (backendBase.includes('localhost')) {
     urls.push(backendBase.replace('localhost', '127.0.0.1'));

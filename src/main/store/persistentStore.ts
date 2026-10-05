@@ -3,6 +3,7 @@ import { safeStorage } from 'electron';
 import path from 'path';
 import os from 'os';
 import { UserAccount } from '../auth/authTypes';
+import { BACKEND_URL, isLegacyLocalBackend } from '../config/backend';
 import { ModpackItem, ModpackManifest } from '../modpack/modpackManifest';
 import { getModpackGameDir, getModpackModsDir } from '../modpack/modpackPaths';
 
@@ -23,7 +24,7 @@ export interface LauncherConfig {
   cachedManifests?: Record<string, ModpackManifest>;
 }
 
-const BACKEND_BASE = process.env.CHAOS_BACKEND_URL || 'http://localhost:3000/api/v1';
+const BACKEND_BASE = BACKEND_URL;
 
 const DEFAULT_CONFIG: LauncherConfig = {
   accounts: [],
@@ -71,7 +72,12 @@ class PersistentStore {
         parsed.accounts = parsed.accounts || [];
 
         // 1. Asegurar URL del backend actualizada
-        if (!parsed.modpackManifestUrl || parsed.modpackManifestUrl.includes('raw.githubusercontent.com')) {
+        if (
+          !parsed.modpackManifestUrl ||
+          parsed.modpackManifestUrl.includes('raw.githubusercontent.com') ||
+          // Versiones anteriores guardaban el backend local; se pasa al servidor público (salvo override de desarrollo)
+          (isLegacyLocalBackend(parsed.modpackManifestUrl) && !isLegacyLocalBackend(BACKEND_URL))
+        ) {
           parsed.modpackManifestUrl = DEFAULT_CONFIG.modpackManifestUrl;
         }
 
