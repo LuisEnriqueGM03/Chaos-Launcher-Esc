@@ -10,6 +10,7 @@ import { getModpackGameDir } from '../modpack/modpackPaths';
 import { ensureVanillaVersionJson } from './vanillaVersion';
 import { ensureFabricProfile } from './fabricProfile';
 import { redactSecrets } from '../utils/redact';
+import { resolveServerAddress, buildQuickPlay } from './serverAddress';
 
 export class GameLauncher extends EventEmitter {
   private client: any;
@@ -237,6 +238,16 @@ export class GameLauncher extends EventEmitter {
         manifest.minecraftVersion,
         manifest.loader.version || '0.15.11',
       );
+    }
+
+    // "Entrar directo al servidor": usa la IP y el puerto que define el backend para este modpack
+    if (store.getAutoJoinServer(modpackTag)) {
+      const cachedPack = store.getCachedModpacks().find((m) => m.tag === modpackTag);
+      const address = resolveServerAddress(manifest.server, cachedPack);
+      if (address) {
+        launchOptions.quickPlay = buildQuickPlay(manifest.minecraftVersion, address);
+        this.emit('log', `[Chaos Launcher] Entrando directo al servidor ${address.host}:${address.port}\n`);
+      }
     }
 
     // MCLC descarga el JSON de Minecraft con un throw dentro de un callback (cierra la app si falla la red):

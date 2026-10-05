@@ -133,6 +133,7 @@ export interface LauncherConfig {
   modpackManifestUrl: string;
   installedModpackVersion: string | null;
   installedModpackVersions?: Record<string, string>;
+  autoJoinServerByTag?: Record<string, boolean>;
 }
 
 export interface JavaInstallation {
@@ -190,6 +191,7 @@ export interface ChaosAPI {
   launcher: {
     launch: (tag?: string) => Promise<void>;
     setKeepOpen: (keep: boolean) => Promise<void>;
+    setAutoJoin: (tag: string, enabled: boolean) => Promise<LauncherConfig>;
     isRunning: () => Promise<boolean>;
     onProgress: (callback: (progress: any) => void) => () => void;
     onLog: (callback: (logLine: string) => void) => () => void;

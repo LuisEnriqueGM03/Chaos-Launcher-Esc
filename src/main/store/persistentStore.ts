@@ -24,6 +24,8 @@ export interface LauncherConfig {
   installedModpackVersion: string | null;
   /** Versión instalada de cada modpack, indexada por tag. */
   installedModpackVersions?: Record<string, string>;
+  /** "Entrar directo al servidor" al jugar, por modpack (cada pack tiene su propio servidor). Apagado por defecto. */
+  autoJoinServerByTag?: Record<string, boolean>;
   /** Estado de mods opcionales de cada modpack, indexado por tag (cada pack es independiente). */
   optionalModsByTag?: Record<string, ModpackOptionalState>;
   /** @deprecated Globales antiguos (mezclaban packs); se migran a optionalModsByTag. */
@@ -54,6 +56,7 @@ const DEFAULT_CONFIG: LauncherConfig = {
   installedModpackVersion: null,
   installedModpackVersions: {},
   optionalModsByTag: {},
+  autoJoinServerByTag: {},
   disabledOptionalMods: [],
   cachedModpacks: [],
   cachedManifests: {},
@@ -227,6 +230,15 @@ class PersistentStore {
     const targetTag = tag || this.config.activeModpackTag;
     if (!targetTag) return null;
     return this.config.installedModpackVersions?.[targetTag] || null;
+  }
+
+  public getAutoJoinServer(tag?: string | null): boolean {
+    const targetTag = tag || this.config.activeModpackTag;
+    return Boolean(targetTag && this.config.autoJoinServerByTag?.[targetTag] === true);
+  }
+
+  public setAutoJoinServer(tag: string, enabled: boolean): void {
+    this.setConfig({ autoJoinServerByTag: { ...(this.config.autoJoinServerByTag || {}), [tag]: enabled } });
   }
 
   /** Registra la versión instalada de UN modpack. No cambia cuál es el modpack activo. */
@@ -417,6 +429,7 @@ class PersistentStore {
       delete versions[targetTag];
       this.config.installedModpackVersions = versions;
       if (this.config.optionalModsByTag) delete this.config.optionalModsByTag[targetTag];
+      if (this.config.autoJoinServerByTag) delete this.config.autoJoinServerByTag[targetTag];
 
       // 3. Quitarlo de la lista y de los manifiestos en memoria
       if (this.config.cachedModpacks) {

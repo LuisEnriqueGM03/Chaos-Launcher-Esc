@@ -342,6 +342,13 @@ ipcMain.handle('launcher:launch', async (_, tag?: string) => {
   }
 });
 
+ipcMain.handle('launcher:setAutoJoin', (_, tag: string, enabled: boolean) => {
+  assertTag(tag);
+  if (typeof tag !== 'string' || !tag || typeof enabled !== 'boolean') throw new Error('Datos inválidos.');
+  store.setAutoJoinServer(tag, enabled);
+  return publicConfig();
+});
+
 ipcMain.handle('launcher:isRunning', () => {
   return gameLauncher.getIsRunning();
 });

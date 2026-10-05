@@ -171,6 +171,17 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
   const iconUrl = modpack?.iconUrl || manifest?.iconUrl;
 
   const targetTag = modpack?.tag || manifest?.tag;
+  // "Entrar directo al servidor" (por modpack, apagado por defecto; se guarda en el launcher)
+  const autoJoin = Boolean(targetTag && config?.autoJoinServerByTag?.[targetTag]);
+  const handleToggleAutoJoin = async (enabled: boolean) => {
+    if (!targetTag) return;
+    try {
+      const updated = await window.chaosAPI?.launcher.setAutoJoin(targetTag, enabled);
+      if (updated) onConfigChange?.(updated);
+    } catch (err) {
+      console.warn('No se pudo guardar la preferencia de entrar directo al servidor:', err);
+    }
+  };
   // Solo cuenta la versión instalada de ESTE modpack (nunca un valor global compartido)
   const installedVersion = (targetTag && config?.installedModpackVersions?.[targetTag]) || null;
   const isInstalled = Boolean(installedVersion);
@@ -663,6 +674,23 @@ export const MimicServerCard: React.FC<MimicServerCardProps> = ({
                   <Play className="w-9 h-9 sm:w-10 sm:h-10 fill-white shrink-0 filter drop-shadow-[2px_2px_0_#143e10]" />
                   <span>JUGAR</span>
                 </button>
+              )}
+
+              {/* Entrar directo al servidor del modpack (la IP la define el backend) */}
+              {activeAccount && isInstalled && !isDownloading && !isGameRunning && serverIp && (
+                <label
+                  className="mt-3 flex items-center gap-2.5 cursor-pointer select-none text-xs sm:text-sm text-stone-200 font-minecraft minecraft-text-shadow-gray bg-black/45 px-3 py-1.5 border border-black/60"
+                  title={`Al jugar, Minecraft se conecta solo a ${serverIp}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoJoin}
+                    onChange={(e) => handleToggleAutoJoin(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                  />
+                  <span>Entrar directo al servidor</span>
+                  <span className="text-amber-400 text-[11px] hidden sm:inline">{serverIp}</span>
+                </label>
               )}
             </div>
           </div>
